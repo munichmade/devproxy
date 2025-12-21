@@ -57,6 +57,65 @@ WARNING: Regenerating the CA will invalidate all existing certificates.
 	},
 }
 
+var caTrustCmd = &cobra.Command{
+	Use:   "trust",
+	Short: "Install CA into system trust store",
+	Long: `Install the devproxy CA certificate into the system trust store.
+
+This allows browsers and other applications to trust certificates signed
+by the devproxy CA without security warnings.
+
+On macOS, this adds the CA to the System Keychain and requires sudo.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !ca.Exists() {
+			fmt.Println("No CA found. Run 'devproxy ca generate' first.")
+			os.Exit(1)
+		}
+
+		if ca.IsTrusted() {
+			fmt.Println("CA is already trusted in", ca.TrustStoreName())
+			return
+		}
+
+		if ca.NeedsSudo() {
+			fmt.Println("Installing CA into", ca.TrustStoreName(), "(requires sudo)...")
+		} else {
+			fmt.Println("Installing CA into", ca.TrustStoreName()+"...")
+		}
+
+		if err := ca.InstallTrust(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to install trust: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("CA successfully installed into", ca.TrustStoreName())
+	},
+}
+
+var caUntrustCmd = &cobra.Command{
+	Use:   "untrust",
+	Short: "Remove CA from system trust store",
+	Long: `Remove the devproxy CA certificate from the system trust store.
+
+This revokes trust for all certificates signed by the devproxy CA.
+
+On macOS, this removes the CA from the System Keychain and requires sudo.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if ca.NeedsSudo() {
+			fmt.Println("Removing CA from", ca.TrustStoreName(), "(requires sudo)...")
+		} else {
+			fmt.Println("Removing CA from", ca.TrustStoreName()+"...")
+		}
+
+		if err := ca.UninstallTrust(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to remove trust: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("CA successfully removed from", ca.TrustStoreName())
+	},
+}
+
 var caInfoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Show CA information",
@@ -84,6 +143,14 @@ var caInfoCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Printf("  Certificate:  %s\n", ca.CertPath())
 		fmt.Printf("  Private key:  %s\n", ca.KeyPath())
+		fmt.Println()
+		if ca.IsTrusted() {
+			fmt.Printf("  Trusted:      yes (%s)\n", ca.TrustStoreName())
+		} else {
+			fmt.Printf("  Trusted:      no\n")
+			fmt.Println()
+			fmt.Println("  Run 'sudo devproxy ca trust' to install into system trust store.")
+		}
 	},
 }
 
@@ -91,5 +158,7 @@ func init() {
 	caGenerateCmd.Flags().BoolP("force", "f", false, "Regenerate CA even if one exists")
 	caCmd.AddCommand(caGenerateCmd)
 	caCmd.AddCommand(caInfoCmd)
+	caCmd.AddCommand(caTrustCmd)
+	caCmd.AddCommand(caUntrustCmd)
 	rootCmd.AddCommand(caCmd)
 }
