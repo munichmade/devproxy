@@ -289,8 +289,8 @@ func TestBuildDNSNames(t *testing.T) {
 	names := buildDNSNames("*.example.localhost", "api.example.localhost")
 
 	expected := map[string]bool{
-		"*.example.localhost":  true,
-		"example.localhost":    true,
+		"*.example.localhost":   true,
+		"example.localhost":     true,
 		"api.example.localhost": true,
 	}
 
@@ -343,4 +343,79 @@ func TestClearCache(t *testing.T) {
 	if len(entries) != 0 {
 		t.Errorf("disk cache has %d files, want 0", len(entries))
 	}
+}
+
+func TestEnsureCertificate(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	m, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	t.Run("generates certificate for new domain", func(t *testing.T) {
+		err := m.EnsureCertificate("new.example.localhost")
+		if err != nil {
+			t.Errorf("EnsureCertificate() error = %v", err)
+		}
+
+		// Verify it's now in cache
+		hello := &tls.ClientHelloInfo{ServerName: "new.example.localhost"}
+		cert, err := m.GetCertificate(hello)
+		if err != nil {
+			t.Errorf("GetCertificate() after EnsureCertificate error = %v", err)
+		}
+		if cert == nil {
+			t.Error("expected certificate to be cached")
+		}
+	})
+
+	t.Run("succeeds for already cached domain", func(t *testing.T) {
+		// First call generates
+		err := m.EnsureCertificate("cached.example.localhost")
+		if err != nil {
+			t.Fatalf("first EnsureCertificate() error = %v", err)
+		}
+
+		// Second call should succeed without error
+		err = m.EnsureCertificate("cached.example.localhost")
+		if err != nil {
+			t.Errorf("second EnsureCertificate() error = %v", err)
+		}
+	})
+
+	t.Run("returns error for empty domain", func(t *testing.T) {
+		err := m.EnsureCertificate("")
+		if err == nil {
+			t.Error("expected error for empty domain")
+		}
+	})
+
+	t.Run("uses wildcard for subdomains", func(t *testing.T) {
+		err := m.EnsureCertificate("sub.wildcard.localhost")
+		if err != nil {
+			t.Fatalf("EnsureCertificate() error = %v", err)
+		}
+
+		// Another subdomain should use same wildcard cert
+		hello := &tls.ClientHelloInfo{ServerName: "other.wildcard.localhost"}
+		cert, err := m.GetCertificate(hello)
+		if err != nil {
+			t.Errorf("GetCertificate() error = %v", err)
+		}
+
+		// Should have wildcard in DNS names
+		x509Cert, _ := x509.ParseCertificate(cert.Certificate[0])
+		hasWildcard := false
+		for _, name := range x509Cert.DNSNames {
+			if name == "*.wildcard.localhost" {
+				hasWildcard = true
+				break
+			}
+		}
+		if !hasWildcard {
+			t.Error("expected wildcard in certificate DNS names")
+		}
+	})
 }

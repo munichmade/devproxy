@@ -16,13 +16,19 @@ type IPResolver interface {
 	ResolveContainerIP(ctx context.Context, containerID string, network string) (string, error)
 }
 
+// CertManager provides certificate operations.
+type CertManager interface {
+	EnsureCertificate(domain string) error
+}
+
 // RouteSync synchronizes Docker container events with the route registry.
 type RouteSync struct {
-	registry *proxy.Registry
-	parser   *LabelParser
-	client   *Client
-	network  string
-	logger   *slog.Logger
+	registry    *proxy.Registry
+	parser      *LabelParser
+	client      *Client
+	certManager CertManager
+	network     string
+	logger      *slog.Logger
 
 	mu         sync.RWMutex
 	containers map[string][]string // containerID -> list of hosts
@@ -38,6 +44,11 @@ func NewRouteSync(registry *proxy.Registry, client *Client, labelPrefix, network
 		logger:     logger,
 		containers: make(map[string][]string),
 	}
+}
+
+// SetCertManager sets the certificate manager for automatic certificate generation.
+func (s *RouteSync) SetCertManager(cm CertManager) {
+	s.certManager = cm
 }
 
 // HandleEvent processes a container event and updates routes accordingly.
@@ -110,6 +121,18 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 			"host", config.Host,
 			"backend", backend,
 			"container", containerName)
+
+		// Pre-generate certificate for the domain
+		if s.certManager != nil {
+			if err := s.certManager.EnsureCertificate(config.Host); err != nil {
+				s.logger.Warn("failed to pre-generate certificate",
+					"host", config.Host,
+					"error", err)
+			} else {
+				s.logger.Debug("certificate ready",
+					"host", config.Host)
+			}
+		}
 	}
 
 	// Track which hosts belong to this container

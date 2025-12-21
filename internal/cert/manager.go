@@ -121,6 +121,52 @@ func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 	return cert, nil
 }
 
+// EnsureCertificate proactively generates or loads a certificate for the given domain.
+// This can be called when a new route is registered to pre-warm the certificate cache.
+// Returns nil error if the certificate is already valid and cached.
+func (m *Manager) EnsureCertificate(domain string) error {
+	if domain == "" {
+		return ErrInvalidDomain
+	}
+
+	// Normalize domain and determine wildcard base
+	domain = strings.ToLower(domain)
+	wildcardDomain := toWildcard(domain)
+
+	// Check memory cache first
+	m.mu.RLock()
+	if cert, ok := m.cache[wildcardDomain]; ok {
+		m.mu.RUnlock()
+		if isValid(cert) {
+			return nil // Already cached and valid
+		}
+	} else {
+		m.mu.RUnlock()
+	}
+
+	// Try to load from disk
+	cert, err := m.loadFromDisk(wildcardDomain)
+	if err == nil && isValid(cert) {
+		m.mu.Lock()
+		m.cache[wildcardDomain] = cert
+		m.mu.Unlock()
+		return nil
+	}
+
+	// Generate new certificate
+	cert, err = m.generate(wildcardDomain, domain)
+	if err != nil {
+		return fmt.Errorf("failed to generate certificate for %s: %w", domain, err)
+	}
+
+	// Cache in memory
+	m.mu.Lock()
+	m.cache[wildcardDomain] = cert
+	m.mu.Unlock()
+
+	return nil
+}
+
 // generate creates a new certificate for the given domain.
 func (m *Manager) generate(wildcardDomain, originalDomain string) (*tls.Certificate, error) {
 	// Generate ECDSA P-256 private key (faster than P-384 for leaf certs)
