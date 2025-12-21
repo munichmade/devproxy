@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
+	"github.com/munichmade/devproxy/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +24,18 @@ The daemon listens on:
 Use 'devproxy status' to check if the daemon is running.
 Use 'devproxy stop' to stop the daemon.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("start: not implemented")
+		d := daemon.New()
+
+		if err := d.Start(); err != nil {
+			if errors.Is(err, daemon.ErrAlreadyRunning) {
+				fmt.Println("devproxy is already running")
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("devproxy started")
 	},
 }
 

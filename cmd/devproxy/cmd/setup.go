@@ -8,7 +8,7 @@ import (
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Configure system for devproxy (requires sudo)",
+	Short: "[stub] Configure system for devproxy (requires sudo)",
 	Long: `Setup configures your system for devproxy by:
 
   1. Generating a local Certificate Authority (CA)

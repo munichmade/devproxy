@@ -3,12 +3,13 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/munichmade/devproxy/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show daemon status and proxied services",
+	Short: "[partial] Show daemon status and proxied services",
 	Long: `Display the current status of the devproxy daemon including:
 
   - Whether the daemon is running
@@ -16,7 +17,16 @@ var statusCmd = &cobra.Command{
   - Currently proxied services
   - Certificate status and expiry dates`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("status: not implemented")
+		d := daemon.New()
+
+		if d.IsRunning() {
+			pid, _ := d.GetPID()
+			fmt.Printf("devproxy is running (pid %d)\n", pid)
+		} else {
+			fmt.Println("devproxy is not running")
+		}
+
+		// TODO: Show entrypoints, proxied services, and certificates
 	},
 }
 

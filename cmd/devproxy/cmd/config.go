@@ -8,7 +8,7 @@ import (
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage configuration",
+	Short: "[stub] Manage configuration",
 	Long:  `View and edit devproxy configuration.`,
 }
 

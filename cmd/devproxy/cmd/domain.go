@@ -8,7 +8,7 @@ import (
 
 var domainCmd = &cobra.Command{
 	Use:   "domain",
-	Short: "Manage domains and certificates",
+	Short: "[stub] Manage domains and certificates",
 	Long:  `Manage registered domains and their TLS certificates.`,
 }
 

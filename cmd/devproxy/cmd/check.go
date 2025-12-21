@@ -8,7 +8,7 @@ import (
 
 var checkCmd = &cobra.Command{
 	Use:   "check",
-	Short: "Run diagnostic checks",
+	Short: "[stub] Run diagnostic checks",
 	Long: `Run diagnostic checks to verify devproxy is configured correctly.
 
 Checks include:
