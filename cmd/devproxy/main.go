@@ -1,13 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"github.com/munichmade/devproxy/cmd/devproxy/cmd"
 )
 
-var version = "dev"
-
 func main() {
-	fmt.Printf("devproxy %s\n", version)
-	os.Exit(0)
+	cmd.Execute()
 }
