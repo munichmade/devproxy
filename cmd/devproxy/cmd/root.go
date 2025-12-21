@@ -16,9 +16,18 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "devproxy",
-	Short: "Local development reverse proxy with TLS and SNI support",
-	Long: `DevProxy is a local development reverse proxy that provides:
+	Use:     "devproxy",
+	Short:   "Local development reverse proxy with TLS and SNI support",
+	Version: Version,
+}
+
+// Execute runs the root command.
+func Execute() {
+	// Update version and long description (set here since Version may be set via ldflags after init)
+	rootCmd.Version = Version
+	rootCmd.Long = fmt.Sprintf(`DevProxy v%s - Local development reverse proxy
+
+DevProxy provides:
 
   - Automatic TLS certificates for *.localhost domains
   - SNI-based routing for multiple services on standard ports
@@ -26,12 +35,8 @@ var rootCmd = &cobra.Command{
   - Built-in DNS server for seamless domain resolution
 
 Start by running 'devproxy setup' to configure your system,
-then 'devproxy start' to run the proxy daemon.`,
-	Version: Version,
-}
+then 'devproxy start' to run the proxy daemon.`, Version)
 
-// Execute runs the root command.
-func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
