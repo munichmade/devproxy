@@ -8,8 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is set at build time via ldflags.
-var Version = "dev"
+// Build-time variables set via ldflags.
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildDate = "unknown"
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "devproxy",
@@ -35,5 +39,5 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.SetVersionTemplate("devproxy version {{.Version}}\n")
+	rootCmd.SetVersionTemplate(fmt.Sprintf("devproxy version {{.Version}}\ncommit: %s\nbuilt: %s\n", Commit, BuildDate))
 }
