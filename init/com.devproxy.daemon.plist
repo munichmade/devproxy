@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+DevProxy launchd plist for macOS
+Install: sudo cp init/com.devproxy.daemon.plist /Library/LaunchDaemons/
+Load:    sudo launchctl load /Library/LaunchDaemons/com.devproxy.daemon.plist
+Unload:  sudo launchctl unload /Library/LaunchDaemons/com.devproxy.daemon.plist
+Status:  sudo launchctl list | grep devproxy
+Logs:    tail -f /usr/local/var/log/devproxy.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.devproxy.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/devproxy</string>
+        <string>run</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/devproxy.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/devproxy.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/devproxy</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/var/root</string>
+    </dict>
+</dict>
+</plist>

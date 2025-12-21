@@ -1,0 +1,35 @@
+# DevProxy systemd service file
+# Install: sudo cp init/devproxy.service /etc/systemd/system/
+# Enable:  sudo systemctl enable devproxy
+# Start:   sudo systemctl start devproxy
+# Status:  sudo systemctl status devproxy
+# Logs:    journalctl -u devproxy -f
+
+[Unit]
+Description=DevProxy - Local Development Reverse Proxy
+Documentation=https://github.com/munichmade/devproxy
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/devproxy run
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home /var/lib/devproxy
+PrivateTmp=true
+
+# Capabilities for privileged ports (53, 80, 443)
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Environment
+Environment=HOME=/var/lib/devproxy
+
+[Install]
+WantedBy=multi-user.target
