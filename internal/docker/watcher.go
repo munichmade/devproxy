@@ -133,7 +133,11 @@ func (w *Watcher) scanExistingContainers(ctx context.Context) error {
 			Labels:        c.Labels,
 		}
 
+		w.logger.Info("calling handler for container",
+			"container", name,
+			"labels_count", len(c.Labels))
 		w.handler(event)
+		w.logger.Info("handler completed for container", "container", name)
 	}
 
 	return nil

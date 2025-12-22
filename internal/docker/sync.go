@@ -53,20 +53,42 @@ func (s *RouteSync) SetCertManager(cm CertManager) {
 
 // HandleEvent processes a container event and updates routes accordingly.
 func (s *RouteSync) HandleEvent(event ContainerEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("panic in HandleEvent", "recover", r, "event", event.Type, "container", event.ContainerName)
+		}
+	}()
+
+	s.logger.Info("HandleEvent called", "type", event.Type, "container", event.ContainerName)
+
 	switch event.Type {
 	case "start":
 		s.handleStart(event)
 	case "stop", "die":
 		s.handleStop(event)
 	}
+
+	s.logger.Info("HandleEvent completed", "container", event.ContainerName)
 }
 
 // handleStart processes a container start event.
 func (s *RouteSync) handleStart(event ContainerEvent) {
 	ctx := context.Background()
 
+	// Safely truncate container ID for logging
+	containerIDShort := event.ContainerID
+	if len(containerIDShort) > 12 {
+		containerIDShort = containerIDShort[:12]
+	}
+
+	s.logger.Debug("processing container start",
+		"container", event.ContainerName,
+		"id", containerIDShort,
+		"labels_count", len(event.Labels))
+
 	// Parse labels to get service configurations
 	configs, err := s.parser.ParseLabels(event.Labels)
+	s.logger.Debug("parsed labels", "container", event.ContainerName, "configs", len(configs), "error", err)
 	if err != nil {
 		s.logger.Warn("failed to parse container labels",
 			"container", event.ContainerID[:12],
@@ -75,12 +97,21 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 	}
 
 	if len(configs) == 0 {
-		// Container doesn't have devproxy enabled
+		s.logger.Debug("container has no devproxy configuration",
+			"container", event.ContainerName)
 		return
 	}
 
+	s.logger.Debug("parsed service configs",
+		"container", event.ContainerName,
+		"configs_count", len(configs))
+
+	s.logger.Debug("resolving container IP", "container", event.ContainerName, "id", containerIDShort)
+
 	// Resolve container IP
 	ip, err := s.resolveContainerIP(ctx, event.ContainerID)
+
+	s.logger.Debug("resolved container IP", "container", event.ContainerName, "ip", ip, "error", err)
 	if err != nil {
 		s.logger.Error("failed to resolve container IP",
 			"container", event.ContainerID[:12],
@@ -96,8 +127,10 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 
 	// Register routes for each service
 	var hosts []string
+	s.logger.Debug("registering routes", "container", event.ContainerName, "count", len(configs))
 	for _, config := range configs {
 		backend := fmt.Sprintf("%s:%d", ip, config.Port)
+		s.logger.Debug("creating route", "host", config.Host, "backend", backend)
 
 		route := proxy.Route{
 			Host:          config.Host,
@@ -111,10 +144,14 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 		if err := s.registry.Add(route); err != nil {
 			s.logger.Warn("failed to add route",
 				"host", config.Host,
-				"backend", backend,
 				"error", err)
 			continue
 		}
+
+		s.logger.Info("route added successfully",
+			"host", config.Host,
+			"backend", backend,
+			"container", containerName)
 
 		hosts = append(hosts, config.Host)
 		s.logger.Info("route added",

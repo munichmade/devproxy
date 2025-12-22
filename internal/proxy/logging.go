@@ -10,33 +10,27 @@ import (
 	"time"
 )
 
-// AccessLogger wraps an http.Handler to log requests in Apache Combined Log Format.
+// AccessLogger wraps an http.Handler to log requests.
+// Logs at DEBUG level for access logs to avoid noise in normal operation.
 type AccessLogger struct {
 	handler http.Handler
-	enabled bool
 	logger  *slog.Logger
 }
 
 // NewAccessLogger creates a new AccessLogger middleware.
-// If enabled is false, requests pass through without logging.
-func NewAccessLogger(handler http.Handler, enabled bool, logger *slog.Logger) *AccessLogger {
+// Access logs are always written at DEBUG level.
+func NewAccessLogger(handler http.Handler, logger *slog.Logger) *AccessLogger {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &AccessLogger{
 		handler: handler,
-		enabled: enabled,
 		logger:  logger,
 	}
 }
 
 // ServeHTTP implements http.Handler.
 func (a *AccessLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !a.enabled {
-		a.handler.ServeHTTP(w, r)
-		return
-	}
-
 	start := time.Now()
 
 	// Wrap the response writer to capture status and size
@@ -52,26 +46,16 @@ func (a *AccessLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Calculate duration
 	duration := time.Since(start)
 
-	// Log in Apache Combined Log Format with duration
+	// Log at DEBUG level
 	a.logRequest(r, wrapped.statusCode, wrapped.bytesWritten, duration)
 }
 
-// logRequest logs a request in Apache Combined Log Format.
-// Format: <host> - - [<timestamp>] "<method> <path> <proto>" <status> <bytes> "<referer>" "<user-agent>" <duration>ms
+// logRequest logs a request at INFO level.
+// Format: <method> <path> -> <status> <bytes> <duration>ms (host: <host>)
 func (a *AccessLogger) logRequest(r *http.Request, status int, bytes int64, duration time.Duration) {
 	host := r.Host
 	if host == "" {
 		host = "-"
-	}
-
-	referer := r.Header.Get("Referer")
-	if referer == "" {
-		referer = "-"
-	}
-
-	userAgent := r.Header.Get("User-Agent")
-	if userAgent == "" {
-		userAgent = "-"
 	}
 
 	// Get request path with query string
@@ -83,24 +67,22 @@ func (a *AccessLogger) logRequest(r *http.Request, status int, bytes int64, dura
 		}
 	}
 
-	// Format timestamp in Apache common log format
-	timestamp := time.Now().Format("02/Jan/2006:15:04:05 -0700")
+	// Get client IP
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = forwarded
+	}
 
-	// Log message in Combined Log Format with duration
-	logLine := fmt.Sprintf("%s - - [%s] \"%s %s %s\" %d %d \"%s\" \"%s\" %dms",
-		host,
-		timestamp,
-		r.Method,
-		path,
-		r.Proto,
-		status,
-		bytes,
-		referer,
-		userAgent,
-		duration.Milliseconds(),
+	// Log at INFO level with structured fields
+	a.logger.Info("access",
+		"method", r.Method,
+		"host", host,
+		"path", path,
+		"status", status,
+		"bytes", bytes,
+		"duration_ms", duration.Milliseconds(),
+		"client", clientIP,
 	)
-
-	a.logger.Info(logLine)
 }
 
 // responseRecorder wraps http.ResponseWriter to capture status code and bytes written.

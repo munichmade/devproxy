@@ -62,14 +62,21 @@ func resolve() *Paths {
 
 	p := &Paths{}
 
-	// Config directory
-	p.ConfigDir = resolveConfigDir(home)
+	// When running as root, use system-wide paths
+	if os.Geteuid() == 0 {
+		p.ConfigDir = "/etc/devproxy"
+		p.DataDir = "/var/lib/devproxy"
+		p.RuntimeDir = "/var/run/devproxy"
+	} else {
+		// Config directory
+		p.ConfigDir = resolveConfigDir(home)
 
-	// Data directory
-	p.DataDir = resolveDataDir(home)
+		// Data directory
+		p.DataDir = resolveDataDir(home)
 
-	// Runtime directory
-	p.RuntimeDir = resolveRuntimeDir(home, p.DataDir)
+		// Runtime directory
+		p.RuntimeDir = resolveRuntimeDir(home, p.DataDir)
+	}
 
 	// Subdirectories
 	p.CADir = filepath.Join(p.DataDir, "ca")

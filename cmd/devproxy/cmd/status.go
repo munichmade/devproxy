@@ -8,6 +8,7 @@ import (
 
 	"github.com/munichmade/devproxy/internal/config"
 	"github.com/munichmade/devproxy/internal/daemon"
+	"github.com/munichmade/devproxy/internal/proxy"
 	"github.com/spf13/cobra"
 )
 
@@ -106,11 +107,20 @@ func getStatus() Status {
 		}
 	}
 
-	// Routes would be read from daemon state via IPC in production
-	// For now, show placeholder if running
+	// Load routes from state file (written by daemon)
 	if status.Running {
-		// In a full implementation, we'd query the daemon for active routes
-		// This would use a Unix socket or similar IPC mechanism
+		routes, err := proxy.LoadState()
+		if err == nil && len(routes) > 0 {
+			for _, route := range routes {
+				status.Routes = append(status.Routes, RouteStatus{
+					Host:          route.Host,
+					Backend:       route.Backend,
+					ContainerName: route.ContainerName,
+					ContainerID:   route.ContainerID,
+					Protocol:      string(route.Protocol),
+				})
+			}
+		}
 	}
 
 	return status

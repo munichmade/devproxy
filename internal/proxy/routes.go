@@ -2,10 +2,15 @@
 package proxy
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/munichmade/devproxy/internal/paths"
 )
 
 // Protocol represents the proxy protocol type.
@@ -76,9 +81,9 @@ func (r *Registry) OnChange(fn func()) {
 // Returns ErrRouteExists if a route for the host already exists.
 func (r *Registry) Add(route Route) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if _, exists := r.routes[route.Host]; exists {
+		r.mu.Unlock()
 		return ErrRouteExists
 	}
 
@@ -88,9 +93,12 @@ func (r *Registry) Add(route Route) error {
 	}
 
 	r.routes[route.Host] = &route
+	onChange := r.onChange
+	r.mu.Unlock()
 
-	if r.onChange != nil {
-		r.onChange()
+	// Call onChange outside the lock to prevent deadlocks
+	if onChange != nil {
+		onChange()
 	}
 
 	return nil
@@ -188,4 +196,61 @@ func (r *Registry) Clear() {
 	if hadRoutes && r.onChange != nil {
 		r.onChange()
 	}
+}
+
+// StateFile returns the path to the routes state file.
+func StateFile() string {
+	return filepath.Join(paths.DataDir(), "routes.json")
+}
+
+// RouteState represents the serializable state of routes for IPC.
+type RouteState struct {
+	Routes []Route `json:"routes"`
+}
+
+// SaveState writes the current routes to a state file for IPC with CLI.
+func (r *Registry) SaveState() error {
+	r.mu.RLock()
+	routes := make([]Route, 0, len(r.routes))
+	for _, route := range r.routes {
+		routes = append(routes, *route)
+	}
+	r.mu.RUnlock()
+
+	// Sort for consistent output
+	sort.Slice(routes, func(i, j int) bool {
+		return routes[i].Host < routes[j].Host
+	})
+
+	state := RouteState{Routes: routes}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	stateFile := StateFile()
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(stateFile, data, 0644)
+}
+
+// LoadState reads routes from the state file (used by CLI to query daemon state).
+func LoadState() ([]Route, error) {
+	data, err := os.ReadFile(StateFile())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var state RouteState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, err
+	}
+
+	return state.Routes, nil
 }

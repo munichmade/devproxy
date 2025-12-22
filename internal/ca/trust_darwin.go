@@ -77,13 +77,13 @@ func IsTrusted() bool {
 		return false
 	}
 
-	// Check if our certificate exists in the System Keychain by searching for it by name
-	cmd := exec.Command("security", "find-certificate",
-		"-c", caCommonName,
-		"/Library/Keychains/System.keychain",
+	// Use security verify-cert to check if the CA is actually trusted
+	// This verifies the trust chain, not just presence in keychain
+	cmd := exec.Command("security", "verify-cert",
+		"-c", CertPath(),
 	)
 
-	// find-certificate returns 0 if found, non-zero otherwise
+	// verify-cert returns 0 if trusted, non-zero otherwise
 	return cmd.Run() == nil
 }
 

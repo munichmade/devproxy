@@ -46,22 +46,22 @@ type LoggingConfig struct {
 }
 
 // Default returns a Config with sensible default values.
-// Uses non-privileged ports by default to avoid requiring root access.
-// Port forwarding (80->8080, 443->8443) can be set up via 'devproxy setup'.
+// HTTP/HTTPS use privileged ports 80/443 (requires running as root).
+// DNS uses unprivileged port 15353 to avoid conflicts with system DNS.
 func Default() *Config {
 	return &Config{
 		DNS: DNSConfig{
-			Listen:   ":5353", // Non-privileged port (use resolver with port 5353)
+			Listen:   ":15353", // Unprivileged port (resolver configured via setup)
 			Domains:  []string{"localhost"},
 			Upstream: "8.8.8.8:53",
-			Enabled:  true, // Can be disabled if using external DNS (e.g., dnsmasq)
+			Enabled:  true,
 		},
 		Entrypoints: map[string]EntrypointConfig{
 			"http": {
-				Listen: ":8080", // Non-privileged port (forwarded from 80 via pf)
+				Listen: ":80", // Privileged port (requires root)
 			},
 			"https": {
-				Listen: ":8443", // Non-privileged port (forwarded from 443 via pf)
+				Listen: ":443", // Privileged port (requires root)
 			},
 			"postgres": {
 				Listen:     ":15432",

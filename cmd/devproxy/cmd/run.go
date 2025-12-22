@@ -46,8 +46,15 @@ func runDaemon() error {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// Initialize logging to file
-	if err := logging.SetupFile(logging.LevelInfo, logFile); err != nil {
+	// Load config first to get logging level
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	// Initialize logging with configured level
+	logLevel := logging.ParseLevel(cfg.Logging.Level)
+	if err = logging.SetupFile(logLevel, logFile); err != nil {
 		return fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
@@ -77,18 +84,7 @@ func runDaemon() error {
 	shutdown.Start()
 	defer shutdown.Stop()
 
-	logging.Info("devproxy daemon starting", "pid", os.Getpid())
-
-	// =========================================================================
-	// Load Configuration
-	// =========================================================================
-	cfg, err := config.Load()
-	if err != nil {
-		// If no config exists, use defaults
-		logging.Warn("failed to load config, using defaults", "error", err)
-		cfg = config.Default()
-	}
-	logging.Info("configuration loaded")
+	logging.Info("devproxy daemon starting", "pid", os.Getpid(), "log_level", cfg.Logging.Level)
 
 	// =========================================================================
 	// Initialize CA and Certificate Manager
@@ -111,6 +107,10 @@ func runDaemon() error {
 	registry := proxy.NewRegistry()
 	registry.OnChange(func() {
 		logging.Debug("route registry updated", "count", registry.Count())
+		// Save state to file for CLI to read
+		if err := registry.SaveState(); err != nil {
+			logging.Error("failed to save route state", "error", err)
+		}
 	})
 	logging.Info("route registry initialized")
 
@@ -168,7 +168,9 @@ func runDaemon() error {
 	// Start HTTPS Server
 	// =========================================================================
 	proxyHandler := proxy.NewProxyHandler(registry)
-	httpsServer := proxy.NewHTTPSServer(httpsCfg.Listen, certManager, proxyHandler)
+	// Wrap with access logger - logs at DEBUG level
+	accessLogger := proxy.NewAccessLogger(proxyHandler, slog.Default())
+	httpsServer := proxy.NewHTTPSServer(httpsCfg.Listen, certManager, accessLogger)
 	if err := httpsServer.Start(); err != nil {
 		return fmt.Errorf("failed to start HTTPS server: %w", err)
 	}

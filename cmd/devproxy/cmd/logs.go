@@ -55,42 +55,36 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 }
 
-// runLogsMacOS uses the unified log system on macOS
+// runLogsMacOS uses the log file on macOS
+// Note: devproxy writes to a file, not the macOS unified logging system
 func runLogsMacOS() error {
-	// First try to use log show for launchd-managed daemon
-	args := []string{"show", "--predicate", "subsystem == 'com.devproxy.daemon'", "--style", "compact"}
+	// devproxy writes logs to a file, so use file-based logging directly
+	return runLogsFromFile()
+}
 
-	if logsSince != "" {
-		duration, err := parseDuration(logsSince)
-		if err != nil {
-			return fmt.Errorf("invalid duration: %w", err)
-		}
-		startTime := time.Now().Add(-duration).Format("2006-01-02 15:04:05")
-		args = append(args, "--start", startTime)
-	} else {
-		args = append(args, "--last", fmt.Sprintf("%dm", max(logsLines/10, 5)))
+// findLogFile locates the log file, checking both user and system-wide locations
+// since the daemon runs as root (to bind privileged ports)
+func findLogFile() string {
+	// Check system-wide location first (daemon runs as root)
+	systemLogFile := "/var/lib/devproxy/devproxy.log"
+	if _, err := os.Stat(systemLogFile); err == nil {
+		return systemLogFile
 	}
 
-	if logsFollow {
-		// Use log stream for following
-		streamArgs := []string{"stream", "--predicate", "subsystem == 'com.devproxy.daemon'", "--style", "compact"}
-		execCmd := exec.Command("log", streamArgs...)
-		execCmd.Stdout = os.Stdout
-		execCmd.Stderr = os.Stderr
-		return execCmd.Run()
+	// Check user's data directory (for non-root runs)
+	userLogFile := filepath.Join(paths.DataDir(), "devproxy.log")
+	if _, err := os.Stat(userLogFile); err == nil {
+		return userLogFile
 	}
 
-	execCmd := exec.Command("log", args...)
-	output, err := execCmd.Output()
-	if err != nil || len(output) == 0 {
-		// Fall back to log file
-		return runLogsFromFile()
+	// Legacy: Check old root location
+	legacyLogFile := "/var/root/Library/Application Support/devproxy/devproxy.log"
+	if _, err := os.Stat(legacyLogFile); err == nil {
+		return legacyLogFile
 	}
 
-	lines := strings.Split(string(output), "\n")
-	filtered := filterLogLines(lines)
-	printLogLines(filtered)
-	return nil
+	// Default to system location (will show appropriate error)
+	return systemLogFile
 }
 
 // runLogsLinux uses journalctl on Linux
@@ -120,13 +114,15 @@ func runLogsLinux() error {
 
 // runLogsFromFile reads logs from the log file
 func runLogsFromFile() error {
-	logFile := filepath.Join(paths.DataDir(), "devproxy.log")
+	logFile := findLogFile()
 
 	file, err := os.Open(logFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Println("No log file found. The daemon may not have been started yet.")
-			fmt.Printf("Expected log file: %s\n", logFile)
+			fmt.Printf("Checked locations:\n")
+			fmt.Printf("  - /var/lib/devproxy/devproxy.log (system)\n")
+			fmt.Printf("  - %s (user)\n", filepath.Join(paths.DataDir(), "devproxy.log"))
 			return nil
 		}
 		return fmt.Errorf("failed to open log file: %w", err)
