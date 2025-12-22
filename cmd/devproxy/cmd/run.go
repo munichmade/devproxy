@@ -394,6 +394,22 @@ func runDaemon() error {
 	)
 
 	// =========================================================================
+	// Start Config File Watcher for Hot Reload
+	// =========================================================================
+	configPath := paths.ConfigFile()
+	configWatcher := config.NewWatcher(configPath, func(newCfg *config.Config) {
+		applyConfigChanges(cfg, newCfg, dnsServer)
+		cfg = newCfg
+	})
+	if err := configWatcher.Start(); err != nil {
+		logging.Warn("failed to start config watcher", "error", err)
+	} else {
+		shutdown.OnShutdown(func() {
+			configWatcher.Stop()
+		})
+	}
+
+	// =========================================================================
 	// Main Loop - Wait for shutdown or reload signals
 	// =========================================================================
 	for {
@@ -404,14 +420,69 @@ func runDaemon() error {
 
 		case <-shutdown.ReloadChan():
 			logging.Info("received SIGHUP, reloading configuration")
-			// Reload config
 			newCfg, err := config.Load()
 			if err != nil {
 				logging.Error("failed to reload config", "error", err)
 				continue
 			}
+			applyConfigChanges(cfg, newCfg, dnsServer)
 			cfg = newCfg
 			logging.Info("configuration reloaded")
 		}
 	}
+}
+
+// applyConfigChanges applies configuration changes that can be hot-reloaded.
+func applyConfigChanges(oldCfg, newCfg *config.Config, dnsServer *dns.Server) {
+	// Update logging level
+	if oldCfg.Logging.Level != newCfg.Logging.Level {
+		newLevel := logging.ParseLevel(newCfg.Logging.Level)
+		logging.SetLevel(newLevel)
+		logging.Info("log level changed", "old", oldCfg.Logging.Level, "new", newCfg.Logging.Level)
+	}
+
+	// Update DNS settings (domains and upstream only - listen address requires restart)
+	if dnsServer != nil {
+		domainsChanged := !equalStringSlices(oldCfg.DNS.Domains, newCfg.DNS.Domains)
+		upstreamChanged := oldCfg.DNS.Upstream != newCfg.DNS.Upstream
+
+		if domainsChanged || upstreamChanged {
+			dnsServer.UpdateConfig(newCfg.DNS.Domains, newCfg.DNS.Upstream)
+		}
+
+		// Warn if listen address changed (requires restart)
+		if oldCfg.DNS.Listen != newCfg.DNS.Listen {
+			logging.Warn("DNS listen address changed - restart required to apply",
+				"old", oldCfg.DNS.Listen, "new", newCfg.DNS.Listen)
+		}
+	}
+
+	// Warn about changes that require restart
+	if oldCfg.Docker.LabelPrefix != newCfg.Docker.LabelPrefix {
+		logging.Warn("Docker label prefix changed - restart required to apply",
+			"old", oldCfg.Docker.LabelPrefix, "new", newCfg.Docker.LabelPrefix)
+	}
+
+	// Check for entrypoint changes
+	for name, oldEp := range oldCfg.Entrypoints {
+		if newEp, exists := newCfg.Entrypoints[name]; exists {
+			if oldEp.Listen != newEp.Listen {
+				logging.Warn("entrypoint listen address changed - restart required to apply",
+					"entrypoint", name, "old", oldEp.Listen, "new", newEp.Listen)
+			}
+		}
+	}
+}
+
+// equalStringSlices compares two string slices for equality.
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }

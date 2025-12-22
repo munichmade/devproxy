@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 )
 
 // Level is an alias for slog.Level for convenience.
@@ -16,6 +17,13 @@ const (
 	LevelInfo  = slog.LevelInfo
 	LevelWarn  = slog.LevelWarn
 	LevelError = slog.LevelError
+)
+
+// levelVar holds the current log level and allows runtime updates.
+var (
+	currentLevel = &slog.LevelVar{}
+	currentFile  *os.File
+	mu           sync.Mutex
 )
 
 // ParseLevel parses a string into a Level.
@@ -40,8 +48,10 @@ func Setup(level Level, w io.Writer) {
 		w = os.Stdout
 	}
 
+	currentLevel.Set(level)
+
 	opts := &slog.HandlerOptions{
-		Level: level,
+		Level: currentLevel,
 	}
 
 	handler := slog.NewTextHandler(w, opts)
@@ -50,12 +60,26 @@ func Setup(level Level, w io.Writer) {
 
 // SetupFile configures the default logger to write to a file.
 func SetupFile(level Level, path string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
+	currentFile = f
 	Setup(level, f)
 	return nil
+}
+
+// SetLevel changes the log level at runtime without recreating the logger.
+func SetLevel(level Level) {
+	currentLevel.Set(level)
+}
+
+// GetLevel returns the current log level.
+func GetLevel() Level {
+	return currentLevel.Level()
 }
 
 // Convenience functions that wrap slog package functions.

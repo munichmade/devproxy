@@ -320,6 +320,30 @@ Data directory contains:
 
 Environment variables `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are respected.
 
+### Hot Reload
+
+Devproxy supports hot reloading of configuration changes. Changes are applied automatically when:
+- The config file is modified (file watcher)
+- A `SIGHUP` signal is received (`devproxy reload`)
+- Docker containers start/stop (automatic discovery)
+
+**Hot-reloadable settings (no restart required):**
+| Setting | Description |
+|---------|-------------|
+| `logging.level` | Log level changes apply immediately |
+| `dns.domains` | Add/remove handled domains |
+| `dns.upstream` | Change upstream DNS server |
+
+**Settings requiring restart:**
+| Setting | Description |
+|---------|-------------|
+| `dns.listen` | DNS server listen address/port |
+| `entrypoints.*.listen` | Entrypoint listen addresses |
+| `docker.label_prefix` | Docker label prefix |
+| `docker.socket` | Docker socket path |
+
+When a setting that requires restart is changed, devproxy logs a warning message indicating a restart is needed.
+
 ## Troubleshooting
 
 ### DNS not resolving

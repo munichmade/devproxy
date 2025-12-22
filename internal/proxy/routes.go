@@ -108,16 +108,19 @@ func (r *Registry) Add(route Route) error {
 // Returns ErrRouteNotFound if the route doesn't exist.
 func (r *Registry) Remove(host string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if _, exists := r.routes[host]; !exists {
+		r.mu.Unlock()
 		return ErrRouteNotFound
 	}
 
 	delete(r.routes, host)
+	onChange := r.onChange
+	r.mu.Unlock()
 
-	if r.onChange != nil {
-		r.onChange()
+	// Call onChange outside the lock to prevent deadlocks
+	if onChange != nil {
+		onChange()
 	}
 
 	return nil
@@ -127,7 +130,6 @@ func (r *Registry) Remove(host string) error {
 // Returns the number of routes removed.
 func (r *Registry) RemoveByContainerID(containerID string) int {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	var removed int
 	for host, route := range r.routes {
@@ -137,8 +139,12 @@ func (r *Registry) RemoveByContainerID(containerID string) int {
 		}
 	}
 
-	if removed > 0 && r.onChange != nil {
-		r.onChange()
+	onChange := r.onChange
+	r.mu.Unlock()
+
+	// Call onChange outside the lock to prevent deadlocks
+	if removed > 0 && onChange != nil {
+		onChange()
 	}
 
 	return removed
@@ -204,13 +210,15 @@ func (r *Registry) GetByEntrypoint(entrypoint string) []*Route {
 // Clear removes all routes from the registry.
 func (r *Registry) Clear() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	hadRoutes := len(r.routes) > 0
 	r.routes = make(map[string]*Route)
+	onChange := r.onChange
+	r.mu.Unlock()
 
-	if hadRoutes && r.onChange != nil {
-		r.onChange()
+	// Call onChange outside the lock to prevent deadlocks
+	if hadRoutes && onChange != nil {
+		onChange()
 	}
 }
 

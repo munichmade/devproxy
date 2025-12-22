@@ -223,6 +223,38 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
+// UpdateConfig updates the DNS server configuration at runtime.
+// Only domains and upstream can be changed without restart.
+// The listen address cannot be changed at runtime.
+func (s *Server) UpdateConfig(domains []string, upstream string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(domains) > 0 {
+		s.domains = domains
+		logging.Info("DNS domains updated", "domains", domains)
+	}
+
+	if upstream != "" && upstream != s.upstream {
+		s.upstream = upstream
+		logging.Info("DNS upstream updated", "upstream", upstream)
+	}
+}
+
+// GetDomains returns the current list of domains.
+func (s *Server) GetDomains() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.domains
+}
+
+// GetUpstream returns the current upstream DNS server.
+func (s *Server) GetUpstream() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.upstream
+}
+
 // handleDNS handles incoming DNS queries.
 func (s *Server) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
