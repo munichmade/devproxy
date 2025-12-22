@@ -13,14 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic TLS certificate generation for local domains
 - HTTP/HTTPS reverse proxy with virtual host routing
 - TCP proxy with SNI-based routing for non-HTTP protocols
+- PostgreSQL SSLRequest protocol support for SSL-preferred client connections
 - Built-in DNS server for `.localhost` domain resolution
 - Docker integration with automatic container discovery via labels
 - Daemon mode with graceful shutdown and signal handling
-- Configuration hot-reload via SIGHUP
-- CLI commands: start, stop, restart, status, reload, setup, check
+- Configuration hot-reload via file watcher (automatic on config file changes)
+- Hot-reloadable settings: log level, DNS domains, DNS upstream, access logging
+- CLI commands: start, stop, restart, status, setup, teardown, check, logs
 - macOS support with launchd integration
-- Linux support with systemd integration and systemd-resolved configuration
-- Configurable entrypoints for PostgreSQL, MySQL, Redis, and custom TCP services
+- Linux support with systemd integration
+- Configurable entrypoints for PostgreSQL, MySQL, MongoDB, Redis, and custom TCP services
+
+### Fixed
+- Route registry deadlock when removing routes on container stop
+- Port availability check now correctly distinguishes between "in use" and "needs sudo"
+- Daemon stop command now waits for process to actually terminate
+
+### Changed
+- DNS server uses unprivileged port 15353 by default (resolver configured via setup)
+- Simplified CLI by removing redundant commands (ca, config, domain, dns, reload)
+- Label prefix is now hardcoded to "devproxy" (removed from config)
+- Access logging is now hot-reloadable and disabled by default
 
 ### Security
 - Private CA keys stored with restricted permissions (0600)
