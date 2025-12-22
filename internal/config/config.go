@@ -12,14 +12,15 @@ import (
 
 // Config represents the complete devproxy configuration.
 type Config struct {
-	DNS         DNSConfig                  `yaml:"dns"`
+	DNS         DNSConfig                   `yaml:"dns"`
 	Entrypoints map[string]EntrypointConfig `yaml:"entrypoints"`
-	Docker      DockerConfig               `yaml:"docker"`
-	Logging     LoggingConfig              `yaml:"logging"`
+	Docker      DockerConfig                `yaml:"docker"`
+	Logging     LoggingConfig               `yaml:"logging"`
 }
 
 // DNSConfig configures the built-in DNS server.
 type DNSConfig struct {
+	Enabled  bool     `yaml:"enabled"` // Enable built-in DNS server (can be disabled if using dnsmasq)
 	Listen   string   `yaml:"listen"`
 	Domains  []string `yaml:"domains"`
 	Upstream string   `yaml:"upstream"`
@@ -45,19 +46,22 @@ type LoggingConfig struct {
 }
 
 // Default returns a Config with sensible default values.
+// Uses non-privileged ports by default to avoid requiring root access.
+// Port forwarding (80->8080, 443->8443) can be set up via 'devproxy setup'.
 func Default() *Config {
 	return &Config{
 		DNS: DNSConfig{
-			Listen:   ":53",
+			Listen:   ":5353", // Non-privileged port (use resolver with port 5353)
 			Domains:  []string{"localhost"},
 			Upstream: "8.8.8.8:53",
+			Enabled:  true, // Can be disabled if using external DNS (e.g., dnsmasq)
 		},
 		Entrypoints: map[string]EntrypointConfig{
 			"http": {
-				Listen: ":80",
+				Listen: ":8080", // Non-privileged port (forwarded from 80 via pf)
 			},
 			"https": {
-				Listen: ":443",
+				Listen: ":8443", // Non-privileged port (forwarded from 443 via pf)
 			},
 			"postgres": {
 				Listen:     ":15432",

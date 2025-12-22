@@ -27,6 +27,8 @@ var runCmd = &cobra.Command{
 	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runDaemon(); err != nil {
+			// Log the error to file since stderr may be nil when running as daemon
+			logging.Error("daemon fatal error", "error", err)
 			fmt.Fprintf(os.Stderr, "daemon error: %v\n", err)
 			os.Exit(1)
 		}
@@ -113,24 +115,29 @@ func runDaemon() error {
 	logging.Info("route registry initialized")
 
 	// =========================================================================
-	// Start DNS Server
+	// Start DNS Server (optional - can be disabled if using external DNS)
 	// =========================================================================
-	dnsConfig := dns.Config{
-		Addr:      cfg.DNS.Listen,
-		Domains:   cfg.DNS.Domains,
-		ResolveIP: net.ParseIP("127.0.0.1"),
-		Upstream:  cfg.DNS.Upstream,
-	}
-	dnsServer := dns.New(dnsConfig)
-	if err := dnsServer.Start(); err != nil {
-		return fmt.Errorf("failed to start DNS server: %w", err)
-	}
-	shutdown.OnShutdown(func() {
-		if err := dnsServer.Stop(); err != nil {
-			logging.Error("failed to stop DNS server", "error", err)
+	var dnsServer *dns.Server
+	if cfg.DNS.Enabled {
+		dnsConfig := dns.Config{
+			Addr:      cfg.DNS.Listen,
+			Domains:   cfg.DNS.Domains,
+			ResolveIP: net.ParseIP("127.0.0.1"),
+			Upstream:  cfg.DNS.Upstream,
 		}
-	})
-	logging.Info("DNS server started", "address", cfg.DNS.Listen, "domains", cfg.DNS.Domains)
+		dnsServer = dns.New(dnsConfig)
+		if err := dnsServer.Start(); err != nil {
+			return fmt.Errorf("failed to start DNS server: %w", err)
+		}
+		shutdown.OnShutdown(func() {
+			if err := dnsServer.Stop(); err != nil {
+				logging.Error("failed to stop DNS server", "error", err)
+			}
+		})
+		logging.Info("DNS server started", "address", cfg.DNS.Listen, "domains", cfg.DNS.Domains)
+	} else {
+		logging.Info("DNS server disabled (using external DNS)")
+	}
 
 	// =========================================================================
 	// Start HTTP Server (redirects to HTTPS)

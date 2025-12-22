@@ -6,6 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/munichmade/devproxy/internal/config"
 	"github.com/munichmade/devproxy/internal/daemon"
 	"github.com/spf13/cobra"
 )
@@ -72,11 +73,37 @@ func getStatus() Status {
 		status.PID = pid
 	}
 
-	// Default entrypoints (these would be read from daemon state in production)
-	status.Entrypoints = []Entrypoint{
-		{Name: "http", Listen: ":80", Protocol: "HTTP", Status: getListenerStatus(80)},
-		{Name: "https", Listen: ":443", Protocol: "HTTPS/TCP", Status: getListenerStatus(443)},
-		{Name: "dns", Listen: ":53", Protocol: "DNS", Status: getListenerStatus(53)},
+	// Load config to show actual configured ports
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	// Build entrypoints from config
+	if cfg.DNS.Enabled {
+		status.Entrypoints = append(status.Entrypoints,
+			Entrypoint{Name: "dns", Listen: cfg.DNS.Listen, Protocol: "DNS", Status: getListenerStatus(status.Running)})
+	}
+
+	if ep, ok := cfg.Entrypoints["http"]; ok {
+		status.Entrypoints = append(status.Entrypoints,
+			Entrypoint{Name: "http", Listen: ep.Listen, Protocol: "HTTP", Status: getListenerStatus(status.Running)})
+	}
+
+	if ep, ok := cfg.Entrypoints["https"]; ok {
+		status.Entrypoints = append(status.Entrypoints,
+			Entrypoint{Name: "https", Listen: ep.Listen, Protocol: "HTTPS", Status: getListenerStatus(status.Running)})
+	}
+
+	// Add TCP entrypoints
+	for name, ep := range cfg.Entrypoints {
+		if name == "http" || name == "https" {
+			continue
+		}
+		if ep.TargetPort > 0 {
+			status.Entrypoints = append(status.Entrypoints,
+				Entrypoint{Name: name, Listen: ep.Listen, Protocol: "TCP", Status: getListenerStatus(status.Running)})
+		}
 	}
 
 	// Routes would be read from daemon state via IPC in production
@@ -89,11 +116,8 @@ func getStatus() Status {
 	return status
 }
 
-func getListenerStatus(port int) string {
-	// In production, check if we're actually listening
-	// For now, return based on daemon status
-	d := daemon.New()
-	if d.IsRunning() {
+func getListenerStatus(running bool) string {
+	if running {
 		return "listening"
 	}
 	return "stopped"

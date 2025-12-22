@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/munichmade/devproxy/internal/paths"
 )
@@ -41,7 +42,7 @@ func NewWithPIDFile(pidFile string) *Daemon {
 }
 
 // Start forks the current process and starts it in the background.
-// The parent process returns nil after the child is started.
+// The parent process returns nil after the child is started and verified.
 // Returns ErrAlreadyRunning if daemon is already running.
 func (d *Daemon) Start() error {
 	// Check if already running
@@ -81,11 +82,23 @@ func (d *Daemon) Start() error {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
+	pid := cmd.Process.Pid
+
 	// Write PID file
-	if err := d.writePIDFile(cmd.Process.Pid); err != nil {
+	if err := d.writePIDFile(pid); err != nil {
 		// Try to kill the process if we can't write PID file
 		_ = cmd.Process.Kill()
 		return fmt.Errorf("failed to write PID file: %w", err)
+	}
+
+	// Wait a moment for the daemon to initialize and potentially fail
+	// This allows us to detect early startup failures
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the process is still running
+	if !isProcessRunning(pid) {
+		d.removePIDFile()
+		return fmt.Errorf("daemon process exited immediately - check logs at %s", paths.LogFile())
 	}
 
 	return nil
