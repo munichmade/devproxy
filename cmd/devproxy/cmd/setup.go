@@ -8,6 +8,7 @@ import (
 	"github.com/munichmade/devproxy/internal/config"
 	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/resolver"
+	"github.com/munichmade/devproxy/internal/service"
 	"github.com/spf13/cobra"
 )
 
@@ -19,10 +20,12 @@ var setupCmd = &cobra.Command{
   1. Generating a local Certificate Authority (CA) if not present
   2. Installing the CA into the system trust store
   3. Configuring DNS resolver for *.localhost domains
+  4. Optionally installing devproxy as a system service (--service flag)
 
 Administrator privileges are required to install the CA and configure DNS.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		domains, _ := cmd.Flags().GetStringSlice("domain")
+		installService, _ := cmd.Flags().GetBool("service")
 
 		// Elevate to root if needed
 		if err := privilege.RequireRoot("installing CA certificate and configuring DNS resolver"); err != nil {
@@ -84,20 +87,46 @@ Administrator privileges are required to install the CA and configure DNS.`,
 			fmt.Printf("   DNS resolver configured for: %v (port %d)\n", domains, dnsPort)
 		}
 
+		// Step 4: Install as system service (optional)
+		if installService {
+			fmt.Print("4. Installing system service... ")
+			if service.IsInstalled() {
+				fmt.Println("already installed")
+			} else {
+				if err := service.Install(service.Config{}); err != nil {
+					fmt.Fprintf(os.Stderr, "failed: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("   Service installed (%s)\n", service.ServiceName())
+
+				fmt.Print("   Starting service... ")
+				if err := service.Start(); err != nil {
+					fmt.Fprintf(os.Stderr, "failed: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Println("started")
+			}
+		}
+
 		fmt.Println()
 		fmt.Println("Setup complete! devproxy is ready to use.")
 		fmt.Println()
-		fmt.Println("Start the daemon with: devproxy start")
+		if installService {
+			fmt.Println("The service is running and will start automatically on boot.")
+		} else {
+			fmt.Println("Start the daemon with: devproxy start")
+		}
 	},
 }
 
-var teardownCmd = &cobra.Command{
-	Use:   "teardown",
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
 	Short: "Remove devproxy system configuration",
-	Long: `Teardown removes devproxy system configuration:
+	Long: `Uninstall removes devproxy system configuration:
 
-  1. Removes CA from system trust store
-  2. Removes DNS resolver configuration
+  1. Uninstalls system service (if installed)
+  2. Removes CA from system trust store
+  3. Removes DNS resolver configuration
 
 Administrator privileges are required.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -112,8 +141,20 @@ Administrator privileges are required.`,
 		fmt.Println("Removing devproxy configuration...")
 		fmt.Println()
 
-		// Step 1: Remove CA trust
-		fmt.Print("1. Removing CA from trust store... ")
+		// Step 1: Uninstall system service
+		fmt.Print("1. Removing system service... ")
+		if !service.IsInstalled() {
+			fmt.Println("not installed")
+		} else {
+			if err := service.Uninstall(); err != nil {
+				fmt.Fprintf(os.Stderr, "failed: %v\n", err)
+			} else {
+				fmt.Println("done")
+			}
+		}
+
+		// Step 2: Remove CA trust
+		fmt.Print("2. Removing CA from trust store... ")
 		if !ca.IsTrusted() {
 			fmt.Println("not installed")
 		} else {
@@ -124,8 +165,8 @@ Administrator privileges are required.`,
 			}
 		}
 
-		// Step 2: Remove DNS resolver
-		fmt.Print("2. Removing DNS resolver... ")
+		// Step 3: Remove DNS resolver
+		fmt.Print("3. Removing DNS resolver... ")
 		if !resolver.IsConfigured(domains) {
 			fmt.Println("not configured")
 		} else {
@@ -137,7 +178,7 @@ Administrator privileges are required.`,
 		}
 
 		fmt.Println()
-		fmt.Println("Teardown complete.")
+		fmt.Println("Uninstall complete.")
 	},
 }
 
@@ -167,8 +208,9 @@ func extractPort(addr string, defaultPort int) int {
 
 func init() {
 	setupCmd.Flags().StringSliceP("domain", "d", []string{"localhost"}, "Domains to configure")
-	teardownCmd.Flags().StringSliceP("domain", "d", []string{"localhost"}, "Domains to remove")
+	setupCmd.Flags().BoolP("service", "s", false, "Install as system service (launchd on macOS, systemd on Linux)")
+	uninstallCmd.Flags().StringSliceP("domain", "d", []string{"localhost"}, "Domains to remove")
 
 	rootCmd.AddCommand(setupCmd)
-	rootCmd.AddCommand(teardownCmd)
+	rootCmd.AddCommand(uninstallCmd)
 }
