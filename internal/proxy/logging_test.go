@@ -19,7 +19,7 @@ func TestAccessLogger(t *testing.T) {
 			w.Write([]byte("Hello, World!"))
 		})
 
-		middleware := NewAccessLogger(handler, logger)
+		middleware := NewAccessLogger(handler, logger, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
 		req.Host = "example.com"
@@ -60,7 +60,7 @@ func TestAccessLogger(t *testing.T) {
 			w.Write([]byte("12345")) // 5 bytes
 		})
 
-		middleware := NewAccessLogger(handler, logger)
+		middleware := NewAccessLogger(handler, logger, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		w := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestAccessLogger(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		middleware := NewAccessLogger(handler, logger)
+		middleware := NewAccessLogger(handler, logger, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		w := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestAccessLogger(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		})
 
-		middleware := NewAccessLogger(handler, logger)
+		middleware := NewAccessLogger(handler, logger, nil)
 
 		req := httptest.NewRequest(http.MethodPost, "http://example.com/api", nil)
 		w := httptest.NewRecorder()
@@ -131,7 +131,7 @@ func TestAccessLogger(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		middleware := NewAccessLogger(handler, nil)
+		middleware := NewAccessLogger(handler, nil, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		w := httptest.NewRecorder()

@@ -284,9 +284,14 @@ func runDaemon() error {
 	// Start HTTPS Server (using pre-bound listener)
 	// =========================================================================
 	proxyHandler := proxy.NewProxyHandler(registry)
-	// Wrap with access logger - logs at DEBUG level
-	accessLogger := proxy.NewAccessLogger(proxyHandler, slog.Default())
-	httpsServer := proxy.NewHTTPSServerWithListener(httpsListener, certManager, accessLogger)
+	// Wrap with access logger that checks config dynamically
+	// This allows hot-reloading the access_log setting
+	// Use a pointer-to-pointer so the closure sees config updates
+	cfgPtr := &cfg
+	httpsHandler := proxy.NewAccessLogger(proxyHandler, slog.Default(), func() bool {
+		return (*cfgPtr).Logging.AccessLog
+	})
+	httpsServer := proxy.NewHTTPSServerWithListener(httpsListener, certManager, httpsHandler)
 	if err := httpsServer.Start(); err != nil {
 		return fmt.Errorf("failed to start HTTPS server: %w", err)
 	}

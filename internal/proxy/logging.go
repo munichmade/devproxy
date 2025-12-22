@@ -11,26 +11,38 @@ import (
 )
 
 // AccessLogger wraps an http.Handler to log requests.
-// Logs at DEBUG level for access logs to avoid noise in normal operation.
+// Logs at INFO level for access logs.
 type AccessLogger struct {
-	handler http.Handler
-	logger  *slog.Logger
+	handler   http.Handler
+	logger    *slog.Logger
+	isEnabled func() bool
 }
 
 // NewAccessLogger creates a new AccessLogger middleware.
-// Access logs are always written at DEBUG level.
-func NewAccessLogger(handler http.Handler, logger *slog.Logger) *AccessLogger {
+// The isEnabled function is called on each request to determine if logging should occur.
+// This allows for dynamic configuration changes without restarting.
+func NewAccessLogger(handler http.Handler, logger *slog.Logger, isEnabled func() bool) *AccessLogger {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if isEnabled == nil {
+		isEnabled = func() bool { return true }
+	}
 	return &AccessLogger{
-		handler: handler,
-		logger:  logger,
+		handler:   handler,
+		logger:    logger,
+		isEnabled: isEnabled,
 	}
 }
 
 // ServeHTTP implements http.Handler.
 func (a *AccessLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// If logging is disabled, just call the handler directly
+	if !a.isEnabled() {
+		a.handler.ServeHTTP(w, r)
+		return
+	}
+
 	start := time.Now()
 
 	// Wrap the response writer to capture status and size
@@ -46,7 +58,7 @@ func (a *AccessLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Calculate duration
 	duration := time.Since(start)
 
-	// Log at DEBUG level
+	// Log the request
 	a.logRequest(r, wrapped.statusCode, wrapped.bytesWritten, duration)
 }
 
