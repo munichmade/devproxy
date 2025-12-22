@@ -104,7 +104,7 @@ func (d *Daemon) Start() error {
 	return nil
 }
 
-// Stop sends SIGTERM to the running daemon.
+// Stop sends SIGTERM to the running daemon and waits for it to exit.
 // Returns ErrNotRunning if daemon is not running.
 func (d *Daemon) Stop() error {
 	pid, err := d.GetPID()
@@ -129,7 +129,28 @@ func (d *Daemon) Stop() error {
 		return fmt.Errorf("failed to send SIGTERM: %w", err)
 	}
 
-	return nil
+	// Wait for the process to exit (up to 10 seconds)
+	timeout := time.After(10 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			// Process didn't exit gracefully, send SIGKILL
+			if err := process.Signal(syscall.SIGKILL); err == nil {
+				// Wait a bit more for SIGKILL to take effect
+				time.Sleep(500 * time.Millisecond)
+			}
+			d.removePIDFile()
+			return nil
+		case <-ticker.C:
+			if !isProcessRunning(pid) {
+				d.removePIDFile()
+				return nil
+			}
+		}
+	}
 }
 
 // Reload sends SIGHUP to the running daemon to reload configuration.

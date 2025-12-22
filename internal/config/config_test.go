@@ -10,8 +10,8 @@ func TestDefault(t *testing.T) {
 	cfg := Default()
 
 	// DNS defaults
-	if cfg.DNS.Listen != ":53" {
-		t.Errorf("DNS.Listen = %q, want %q", cfg.DNS.Listen, ":53")
+	if cfg.DNS.Listen != ":15353" {
+		t.Errorf("DNS.Listen = %q, want %q", cfg.DNS.Listen, ":15353")
 	}
 	if len(cfg.DNS.Domains) != 1 || cfg.DNS.Domains[0] != "localhost" {
 		t.Errorf("DNS.Domains = %v, want [localhost]", cfg.DNS.Domains)
@@ -205,8 +205,8 @@ func TestLoadFromFile_CreatesDefault(t *testing.T) {
 	}
 
 	// Should have default values
-	if cfg.DNS.Listen != ":53" {
-		t.Errorf("DNS.Listen = %q, want %q", cfg.DNS.Listen, ":53")
+	if cfg.DNS.Listen != ":15353" {
+		t.Errorf("DNS.Listen = %q, want %q", cfg.DNS.Listen, ":15353")
 	}
 
 	// File should now exist

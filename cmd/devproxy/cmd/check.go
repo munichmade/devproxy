@@ -45,7 +45,7 @@ func init() {
 }
 
 func runCheck(cmd *cobra.Command, args []string) {
-	fmt.Println("\nChecking system configuration...\n")
+	fmt.Println("\nChecking system configuration...")
 
 	var results []CheckResult
 	var failures int
@@ -253,16 +253,29 @@ func checkPort443() CheckResult {
 func checkPort(port int) CheckResult {
 	result := CheckResult{Name: fmt.Sprintf("port_%d", port)}
 
+	// First try to bind - this works if we have permission and port is free
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		result.Passed = false
-		result.Message = fmt.Sprintf("Port %d is in use", port)
-		result.Suggestion = fmt.Sprintf("Stop the service using port %d or run devproxy with sudo", port)
+	if err == nil {
+		ln.Close()
+		result.Passed = true
+		result.Message = fmt.Sprintf("Port %d available", port)
 		return result
 	}
-	ln.Close()
 
-	result.Passed = true
-	result.Message = fmt.Sprintf("Port %d available", port)
+	// Binding failed - check if it's a permission issue or actually in use
+	// Try connecting to the port to see if something is listening
+	conn, connErr := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 1*time.Second)
+	if connErr != nil {
+		// Connection refused or timed out - port is likely free but we lack permission to bind
+		result.Passed = true
+		result.Message = fmt.Sprintf("Port %d available (requires sudo to bind)", port)
+		return result
+	}
+	conn.Close()
+
+	// Something is actually listening on this port
+	result.Passed = false
+	result.Message = fmt.Sprintf("Port %d is in use", port)
+	result.Suggestion = fmt.Sprintf("Stop the service using port %d or run devproxy with sudo", port)
 	return result
 }

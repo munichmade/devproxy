@@ -80,9 +80,9 @@ func TestIsLocalDomain(t *testing.T) {
 }
 
 func TestServerStartStop(t *testing.T) {
-	// Use a high port to avoid permission issues
+	// Use a random high port to avoid conflicts with running devproxy
 	cfg := Config{
-		Addr:    "127.0.0.1:15353",
+		Addr:    "127.0.0.1:25353",
 		Domains: []string{"localhost"},
 	}
 

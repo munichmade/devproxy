@@ -10,7 +10,7 @@ import (
 )
 
 func TestAccessLogger(t *testing.T) {
-	t.Run("logs request details when enabled", func(t *testing.T) {
+	t.Run("logs request details", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, nil))
 
@@ -19,7 +19,7 @@ func TestAccessLogger(t *testing.T) {
 			w.Write([]byte("Hello, World!"))
 		})
 
-		middleware := NewAccessLogger(handler, true, logger)
+		middleware := NewAccessLogger(handler, logger)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
 		req.Host = "example.com"
@@ -51,28 +51,6 @@ func TestAccessLogger(t *testing.T) {
 		}
 	})
 
-	t.Run("does not log when disabled", func(t *testing.T) {
-		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&buf, nil))
-
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
-
-		middleware := NewAccessLogger(handler, false, logger)
-
-		req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
-		w := httptest.NewRecorder()
-
-		middleware.ServeHTTP(w, req)
-
-		logOutput := buf.String()
-
-		if logOutput != "" {
-			t.Errorf("expected no log output when disabled, got: %s", logOutput)
-		}
-	})
-
 	t.Run("logs response size", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, nil))
@@ -82,7 +60,7 @@ func TestAccessLogger(t *testing.T) {
 			w.Write([]byte("12345")) // 5 bytes
 		})
 
-		middleware := NewAccessLogger(handler, true, logger)
+		middleware := NewAccessLogger(handler, logger)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		w := httptest.NewRecorder()
@@ -92,8 +70,8 @@ func TestAccessLogger(t *testing.T) {
 		logOutput := buf.String()
 
 		// Check that 5 bytes are logged (the response body size)
-		if !strings.Contains(logOutput, " 5 ") {
-			t.Errorf("expected log to contain response size '5', got: %s", logOutput)
+		if !strings.Contains(logOutput, "bytes=5") {
+			t.Errorf("expected log to contain response size 'bytes=5', got: %s", logOutput)
 		}
 	})
 
@@ -105,7 +83,7 @@ func TestAccessLogger(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		middleware := NewAccessLogger(handler, true, logger)
+		middleware := NewAccessLogger(handler, logger)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		w := httptest.NewRecorder()
@@ -114,9 +92,9 @@ func TestAccessLogger(t *testing.T) {
 
 		logOutput := buf.String()
 
-		// Check duration is logged (ends with "ms")
-		if !strings.Contains(logOutput, "ms") {
-			t.Errorf("expected log to contain duration in 'ms', got: %s", logOutput)
+		// Check duration_ms is logged
+		if !strings.Contains(logOutput, "duration_ms=") {
+			t.Errorf("expected log to contain 'duration_ms=', got: %s", logOutput)
 		}
 	})
 
@@ -128,7 +106,7 @@ func TestAccessLogger(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		})
 
-		middleware := NewAccessLogger(handler, true, logger)
+		middleware := NewAccessLogger(handler, logger)
 
 		req := httptest.NewRequest(http.MethodPost, "http://example.com/api", nil)
 		w := httptest.NewRecorder()
@@ -153,7 +131,7 @@ func TestAccessLogger(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		middleware := NewAccessLogger(handler, true, nil)
+		middleware := NewAccessLogger(handler, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		w := httptest.NewRecorder()
@@ -163,34 +141,6 @@ func TestAccessLogger(t *testing.T) {
 
 		if w.Code != http.StatusOK {
 			t.Errorf("expected status 200, got %d", w.Code)
-		}
-	})
-
-	t.Run("logs user agent and referer", func(t *testing.T) {
-		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&buf, nil))
-
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
-
-		middleware := NewAccessLogger(handler, true, logger)
-
-		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-		req.Header.Set("User-Agent", "TestAgent/1.0")
-		req.Header.Set("Referer", "http://referrer.com/page")
-		w := httptest.NewRecorder()
-
-		middleware.ServeHTTP(w, req)
-
-		logOutput := buf.String()
-
-		if !strings.Contains(logOutput, "TestAgent/1.0") {
-			t.Errorf("expected log to contain user agent 'TestAgent/1.0', got: %s", logOutput)
-		}
-
-		if !strings.Contains(logOutput, "http://referrer.com/page") {
-			t.Errorf("expected log to contain referer 'http://referrer.com/page', got: %s", logOutput)
 		}
 	})
 }

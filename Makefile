@@ -69,6 +69,7 @@ fmt:
 ## install: Build and install to /usr/local/bin
 install: build
 	@echo "Installing $(BINARY) to $(INSTALL_DIR)..."
+	@sudo rm $(INSTALL_DIR)/$(BINARY)
 	@sudo cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@sudo chmod +x $(INSTALL_DIR)/$(BINARY)
 	@echo "Installed successfully"

@@ -165,13 +165,19 @@ labels:
 
 ### TCP Routing
 
-For non-HTTP services like databases:
+For non-HTTP services like databases, use the `entrypoint` label to route through a TCP entrypoint:
 
 ```yaml
 labels:
   - "devproxy.enable=true"
-  - "devproxy.tcp.postgres=5432"
+  - "devproxy.host=db.localhost"
+  - "devproxy.port=5432"
+  - "devproxy.entrypoint=postgres"
 ```
+
+The entrypoint name must match one defined in your config (e.g., `postgres`, `mysql`, `mongo`).
+
+**Note:** For SSL mode "Preferred" PostgreSQL clients, devproxy automatically handles the PostgreSQL SSLRequest protocol to enable SNI-based routing.
 
 ### Docker Compose Example
 
@@ -196,52 +202,123 @@ services:
     image: postgres:16
     labels:
       - "devproxy.enable=true"
-      - "devproxy.tcp.postgres=5432"
+      - "devproxy.host=db.localhost"
+      - "devproxy.port=5432"
+      - "devproxy.entrypoint=postgres"
 ```
 
 ## Configuration File
 
-The configuration file is located at `~/.config/devproxy/config.yaml` (or `/etc/devproxy/config.yaml` for system-wide).
+The configuration file is located at `~/.config/devproxy/config.yaml`.
+
+### Complete Configuration Reference
 
 ```yaml
-# Log level: debug, info, warn, error
-log_level: info
-
 # DNS server configuration
 dns:
-  listen: ":53"
+  # Enable/disable the built-in DNS server
+  # Set to false if using external DNS (e.g., dnsmasq)
+  enabled: true
+  
+  # Address and port to listen on
+  # Uses unprivileged port by default (resolver configured via setup)
+  listen: ":15353"
+  
+  # Domains to handle (will resolve to 127.0.0.1)
+  # All subdomains are automatically included (e.g., *.localhost)
   domains:
     - localhost
+    - test
+  
+  # Upstream DNS server for non-matching queries
+  upstream: "8.8.8.8:53"
 
-# HTTP entrypoint
-http:
-  listen: ":80"
-
-# HTTPS entrypoint  
-https:
-  listen: ":443"
-
-# Additional TCP entrypoints
+# Entrypoints define the ports devproxy listens on
+# Reserved names: "http" and "https" are handled specially
 entrypoints:
+  # HTTP entrypoint (redirects to HTTPS by default)
+  http:
+    listen: ":80"
+  
+  # HTTPS entrypoint (TLS termination with auto-generated certs)
+  https:
+    listen: ":443"
+  
+  # TCP entrypoints for databases and other services
+  # The name is used in container labels: devproxy.entrypoint=postgres
   postgres:
-    listen: ":15432"
+    listen: ":15432"      # Port devproxy listens on
+    target_port: 5432     # Default backend port (optional)
+  
   mysql:
     listen: ":13306"
+    target_port: 3306
+  
+  mongo:
+    listen: ":27017"
+    target_port: 27017
+  
   redis:
     listen: ":16379"
+    target_port: 6379
 
-# Docker integration
+# Docker integration settings
 docker:
+  # Enable/disable Docker container discovery
   enabled: true
-  host: "unix:///var/run/docker.sock"
+  
+  # Docker socket path
+  socket: "unix:///var/run/docker.sock"
+  
+  # Prefix for container labels (e.g., devproxy.enable, devproxy.host)
+  label_prefix: "devproxy"
 
-# Certificate settings
-certificates:
-  dir: "~/.config/devproxy/certs"
-  ca:
-    cert: "~/.config/devproxy/ca/cert.pem"
-    key: "~/.config/devproxy/ca/key.pem"
+# Logging configuration
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+  
+  # Enable HTTP access logging
+  access_log: false
 ```
+
+### Default Values
+
+If no configuration file exists, devproxy creates one with these defaults:
+
+| Setting | Default Value |
+|---------|---------------|
+| `dns.enabled` | `true` |
+| `dns.listen` | `:15353` |
+| `dns.domains` | `["localhost"]` |
+| `dns.upstream` | `8.8.8.8:53` |
+| `entrypoints.http.listen` | `:80` |
+| `entrypoints.https.listen` | `:443` |
+| `entrypoints.postgres.listen` | `:15432` |
+| `entrypoints.postgres.target_port` | `5432` |
+| `entrypoints.mongo.listen` | `:27017` |
+| `entrypoints.mongo.target_port` | `27017` |
+| `docker.enabled` | `true` |
+| `docker.socket` | `unix:///var/run/docker.sock` |
+| `docker.label_prefix` | `devproxy` |
+| `logging.level` | `info` |
+| `logging.access_log` | `false` |
+
+### File Locations
+
+| Platform | Config File | Data Directory |
+|----------|-------------|----------------|
+| **macOS** | `~/.config/devproxy/config.yaml` | `~/Library/Application Support/devproxy/` |
+| **Linux** | `~/.config/devproxy/config.yaml` | `~/.local/share/devproxy/` |
+
+Data directory contains:
+- `ca/` - Root CA certificate and private key
+- `certs/` - Generated TLS certificates
+- `devproxy.log` - Daemon log file
+- `devproxy.pid` - PID file
+- `routes.json` - Active route registry
+
+Environment variables `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are respected.
 
 ## Troubleshooting
 
@@ -284,11 +361,11 @@ devproxy logs -f
 
 ### Port already in use
 
-Check what's using port 53/80/443:
+Check what's using the ports:
 ```bash
-sudo lsof -i :53
 sudo lsof -i :80
 sudo lsof -i :443
+sudo lsof -i :15353  # DNS server
 ```
 
 ### Permission denied
@@ -311,7 +388,7 @@ sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/devproxy
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────────────┐  │
 │  │   DNS   │  │  HTTP   │  │  HTTPS  │  │  TCP Router   │  │
-│  │  :53    │  │  :80    │  │  :443   │  │ :15432,:13306 │  │
+│  │ :15353  │  │  :80    │  │  :443   │  │ :15432,:13306 │  │
 │  └────┬────┘  └────┬────┘  └────┬────┘  └───────┬───────┘  │
 │       │            │            │               │          │
 │       v            v            v               v          │
