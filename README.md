@@ -22,11 +22,11 @@ git clone https://github.com/munichmade/devproxy
 cd devproxy
 make install
 
-# Initial setup (creates CA, configures DNS resolver)
+# Initial setup (creates CA, configures DNS resolver - requires sudo)
 sudo devproxy setup
 
 # Start the daemon
-sudo devproxy start
+devproxy start
 
 # Add labels to your container
 docker run -d \
@@ -86,20 +86,17 @@ This will:
 ### Starting/Stopping
 
 ```bash
-# Start as foreground process
-sudo devproxy run
-
 # Start as daemon
-sudo devproxy start
+devproxy start
 
 # Stop daemon
-sudo devproxy stop
+devproxy stop
 
 # Restart daemon
-sudo devproxy restart
+devproxy restart
 
 # Reload configuration
-sudo devproxy reload
+devproxy reload
 
 # Check status
 devproxy status
