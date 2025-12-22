@@ -52,9 +52,6 @@ func TestDefault(t *testing.T) {
 	if cfg.Docker.Socket != "unix:///var/run/docker.sock" {
 		t.Errorf("Docker.Socket = %q, want %q", cfg.Docker.Socket, "unix:///var/run/docker.sock")
 	}
-	if cfg.Docker.LabelPrefix != "devproxy" {
-		t.Errorf("Docker.LabelPrefix = %q, want %q", cfg.Docker.LabelPrefix, "devproxy")
-	}
 
 	// Logging defaults
 	if cfg.Logging.Level != "info" {
@@ -105,11 +102,6 @@ func TestValidate(t *testing.T) {
 			name:    "docker disabled without socket is ok",
 			modify:  func(c *Config) { c.Docker.Enabled = false; c.Docker.Socket = "" },
 			wantErr: false,
-		},
-		{
-			name:    "empty label prefix",
-			modify:  func(c *Config) { c.Docker.LabelPrefix = "" },
-			wantErr: true,
 		},
 		{
 			name:    "invalid log level",

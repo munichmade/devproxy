@@ -29,10 +29,9 @@ type EventHandler func(event ContainerEvent)
 
 // Watcher watches for Docker container events.
 type Watcher struct {
-	client      *Client
-	labelPrefix string
-	handler     EventHandler
-	logger      *slog.Logger
+	client  *Client
+	handler EventHandler
+	logger  *slog.Logger
 
 	mu        sync.Mutex
 	running   bool
@@ -41,15 +40,14 @@ type Watcher struct {
 }
 
 // NewWatcher creates a new container event watcher.
-func NewWatcher(client *Client, labelPrefix string, handler EventHandler, logger *slog.Logger) *Watcher {
+func NewWatcher(client *Client, handler EventHandler, logger *slog.Logger) *Watcher {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Watcher{
-		client:      client,
-		labelPrefix: labelPrefix,
-		handler:     handler,
-		logger:      logger,
+		client:  client,
+		handler: handler,
+		logger:  logger,
 	}
 }
 
@@ -99,7 +97,7 @@ func (w *Watcher) Stop() {
 
 // scanExistingContainers discovers already-running containers with devproxy labels.
 func (w *Watcher) scanExistingContainers(ctx context.Context) error {
-	enableLabel := w.labelPrefix + ".enable"
+	enableLabel := LabelPrefix + ".enable"
 
 	// List running containers with our enable label
 	opts := container.ListOptions{
@@ -167,7 +165,7 @@ func (w *Watcher) watchEvents(ctx context.Context) {
 
 // watchEventStream subscribes to Docker events until disconnection or stop.
 func (w *Watcher) watchEventStream(ctx context.Context) {
-	enableLabel := w.labelPrefix + ".enable"
+	enableLabel := LabelPrefix + ".enable"
 
 	// Create filter for container events with our label
 	opts := events.ListOptions{

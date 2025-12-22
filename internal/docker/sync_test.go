@@ -14,7 +14,7 @@ func TestNewRouteSync(t *testing.T) {
 		client := &Client{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		sync := NewRouteSync(registry, client, "devproxy", "bridge", logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
 
 		if sync.registry != registry {
 			t.Error("expected registry to be set")
@@ -37,7 +37,7 @@ func TestRouteSync_HandleEvent(t *testing.T) {
 		client := &Client{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		sync := NewRouteSync(registry, client, "devproxy", "bridge", logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
 
 		event := ContainerEvent{
 			ContainerID: "abc123",
@@ -61,7 +61,7 @@ func TestRouteSync_HandleEvent(t *testing.T) {
 		client := &Client{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		sync := NewRouteSync(registry, client, "devproxy", "bridge", logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
 
 		event := ContainerEvent{
 			ContainerID: "abc123def456",
@@ -78,7 +78,7 @@ func TestRouteSync_HandleEvent(t *testing.T) {
 		client := &Client{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		sync := NewRouteSync(registry, client, "devproxy", "bridge", logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
 
 		// Simulate a start event with labels but no docker client
 		// The IP resolution will fail, so no routes will be added
@@ -103,7 +103,7 @@ func TestRouteSync_HandleEvent(t *testing.T) {
 func TestRouteSync_GetProtocol(t *testing.T) {
 	registry := proxy.NewRegistry()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sync := NewRouteSync(registry, nil, "devproxy", "bridge", logger)
+	sync := NewRouteSync(registry, nil, "bridge", logger)
 
 	t.Run("returns HTTP by default", func(t *testing.T) {
 		config := ServiceConfig{
@@ -135,7 +135,7 @@ func TestRouteSync_ContainerTracking(t *testing.T) {
 	t.Run("removes tracked hosts on stop", func(t *testing.T) {
 		registry := proxy.NewRegistry()
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		sync := NewRouteSync(registry, nil, "devproxy", "bridge", logger)
+		sync := NewRouteSync(registry, nil, "bridge", logger)
 
 		// Manually add a route and track it
 		registry.Add(proxy.Route{
@@ -174,7 +174,7 @@ func TestRouteSync_ContainerTracking(t *testing.T) {
 	t.Run("handles die event same as stop", func(t *testing.T) {
 		registry := proxy.NewRegistry()
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		sync := NewRouteSync(registry, nil, "devproxy", "bridge", logger)
+		sync := NewRouteSync(registry, nil, "bridge", logger)
 
 		// Manually add a route and track it
 		registry.Add(proxy.Route{

@@ -35,10 +35,10 @@ type RouteSync struct {
 }
 
 // NewRouteSync creates a new route synchronizer.
-func NewRouteSync(registry *proxy.Registry, client *Client, labelPrefix, network string, logger *slog.Logger) *RouteSync {
+func NewRouteSync(registry *proxy.Registry, client *Client, network string, logger *slog.Logger) *RouteSync {
 	return &RouteSync{
 		registry:   registry,
-		parser:     NewLabelParser(labelPrefix),
+		parser:     NewLabelParser(),
 		client:     client,
 		network:    network,
 		logger:     logger,

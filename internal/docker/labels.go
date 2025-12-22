@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// LabelPrefix is the prefix used for all devproxy Docker labels.
+const LabelPrefix = "devproxy"
+
 // ServiceConfig represents a parsed service configuration from Docker labels.
 type ServiceConfig struct {
 	// Name is the service name (for multi-service configs) or empty for single service.
@@ -28,9 +31,9 @@ type LabelParser struct {
 	prefix string
 }
 
-// NewLabelParser creates a new label parser with the given prefix.
-func NewLabelParser(prefix string) *LabelParser {
-	return &LabelParser{prefix: prefix}
+// NewLabelParser creates a new label parser with the devproxy prefix.
+func NewLabelParser() *LabelParser {
+	return &LabelParser{prefix: LabelPrefix}
 }
 
 // ParseLabels parses container labels and returns service configurations.

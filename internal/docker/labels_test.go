@@ -5,7 +5,7 @@ import (
 )
 
 func TestLabelParser_ParseLabels(t *testing.T) {
-	parser := NewLabelParser("devproxy")
+	parser := NewLabelParser()
 
 	t.Run("returns nil when not enabled", func(t *testing.T) {
 		labels := map[string]string{
@@ -156,7 +156,7 @@ func TestLabelParser_ParseLabels(t *testing.T) {
 }
 
 func TestLabelParser_IsEnabled(t *testing.T) {
-	parser := NewLabelParser("devproxy")
+	parser := NewLabelParser()
 
 	t.Run("returns true when enabled", func(t *testing.T) {
 		labels := map[string]string{
@@ -183,40 +183,6 @@ func TestLabelParser_IsEnabled(t *testing.T) {
 
 		if parser.IsEnabled(labels) {
 			t.Error("expected IsEnabled to return false")
-		}
-	})
-}
-
-func TestLabelParser_CustomPrefix(t *testing.T) {
-	parser := NewLabelParser("myproxy")
-
-	t.Run("uses custom prefix", func(t *testing.T) {
-		labels := map[string]string{
-			"myproxy.enable": "true",
-			"myproxy.host":   "app.localhost",
-		}
-
-		configs, err := parser.ParseLabels(labels)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(configs) != 1 {
-			t.Fatalf("expected 1 config, got %d", len(configs))
-		}
-	})
-
-	t.Run("ignores default prefix", func(t *testing.T) {
-		labels := map[string]string{
-			"devproxy.enable": "true",
-			"devproxy.host":   "app.localhost",
-		}
-
-		configs, err := parser.ParseLabels(labels)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if configs != nil {
-			t.Errorf("expected nil configs with wrong prefix, got %v", configs)
 		}
 	})
 }

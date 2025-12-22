@@ -14,7 +14,7 @@ func TestNewWatcher(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		handler := func(event ContainerEvent) {}
 
-		watcher := NewWatcher(client, "devproxy", handler, logger)
+		watcher := NewWatcher(client, handler, logger)
 
 		if watcher == nil {
 			t.Fatal("expected watcher to be created")
@@ -22,16 +22,13 @@ func TestNewWatcher(t *testing.T) {
 		if watcher.client != client {
 			t.Error("expected watcher to have the provided client")
 		}
-		if watcher.labelPrefix != "devproxy" {
-			t.Errorf("expected label prefix 'devproxy', got '%s'", watcher.labelPrefix)
-		}
 	})
 
 	t.Run("uses default logger when nil", func(t *testing.T) {
 		client := &Client{}
 		handler := func(event ContainerEvent) {}
 
-		watcher := NewWatcher(client, "devproxy", handler, nil)
+		watcher := NewWatcher(client, handler, nil)
 
 		if watcher.logger == nil {
 			t.Error("expected default logger to be set")
@@ -45,7 +42,7 @@ func TestWatcher_Stop(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		handler := func(event ContainerEvent) {}
 
-		watcher := NewWatcher(client, "devproxy", handler, logger)
+		watcher := NewWatcher(client, handler, logger)
 
 		// Should not panic
 		watcher.Stop()
@@ -58,7 +55,7 @@ func TestWatcher_IsRunning(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		handler := func(event ContainerEvent) {}
 
-		watcher := NewWatcher(client, "devproxy", handler, logger)
+		watcher := NewWatcher(client, handler, logger)
 
 		if watcher.IsRunning() {
 			t.Error("expected IsRunning to be false")
@@ -102,7 +99,7 @@ func TestWatcher_StartRequiresConnection(t *testing.T) {
 			eventReceived <- event
 		}
 
-		watcher := NewWatcher(client, "devproxy", handler, logger)
+		watcher := NewWatcher(client, handler, logger)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
@@ -123,7 +120,7 @@ func TestWatcher_HandlerCallback(t *testing.T) {
 
 		handler := func(event ContainerEvent) {}
 
-		watcher := NewWatcher(client, "devproxy", handler, logger)
+		watcher := NewWatcher(client, handler, logger)
 
 		// Verify handler is set by checking it's not nil
 		if watcher.handler == nil {

@@ -34,9 +34,8 @@ type EntrypointConfig struct {
 
 // DockerConfig configures Docker integration.
 type DockerConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Socket      string `yaml:"socket"`
-	LabelPrefix string `yaml:"label_prefix"`
+	Enabled bool   `yaml:"enabled"`
+	Socket  string `yaml:"socket"`
 }
 
 // LoggingConfig configures logging behavior.
@@ -73,9 +72,8 @@ func Default() *Config {
 			},
 		},
 		Docker: DockerConfig{
-			Enabled:     true,
-			Socket:      "unix:///var/run/docker.sock",
-			LabelPrefix: "devproxy",
+			Enabled: true,
+			Socket:  "unix:///var/run/docker.sock",
 		},
 		Logging: LoggingConfig{
 			Level:     "info",
@@ -173,9 +171,6 @@ func (c *Config) Validate() error {
 	// Validate Docker config
 	if c.Docker.Enabled && c.Docker.Socket == "" {
 		return fmt.Errorf("docker.socket is required when docker is enabled")
-	}
-	if c.Docker.LabelPrefix == "" {
-		return fmt.Errorf("docker.label_prefix is required")
 	}
 
 	// Validate logging config

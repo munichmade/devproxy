@@ -364,15 +364,15 @@ func runDaemon() error {
 				logging.Info("connected to Docker daemon")
 
 				// Create route sync to handle container events
-				routeSync := docker.NewRouteSync(registry, dockerClient, cfg.Docker.LabelPrefix, "", logger)
+				routeSync := docker.NewRouteSync(registry, dockerClient, "", logger)
 				routeSync.SetCertManager(certManager)
 
 				// Create and start watcher
-				watcher := docker.NewWatcher(dockerClient, cfg.Docker.LabelPrefix, routeSync.HandleEvent, logger)
+				watcher := docker.NewWatcher(dockerClient, routeSync.HandleEvent, logger)
 				if err := watcher.Start(ctx); err != nil {
 					logging.Error("failed to start Docker watcher", "error", err)
 				} else {
-					logging.Info("Docker watcher started", "label_prefix", cfg.Docker.LabelPrefix)
+					logging.Info("Docker watcher started")
 
 					// Register cleanup
 					shutdown.OnShutdown(func() {
@@ -460,12 +460,6 @@ func applyConfigChanges(oldCfg, newCfg *config.Config, dnsServer *dns.Server) {
 			logging.Warn("DNS listen address changed - restart required to apply",
 				"old", oldCfg.DNS.Listen, "new", newCfg.DNS.Listen)
 		}
-	}
-
-	// Warn about changes that require restart
-	if oldCfg.Docker.LabelPrefix != newCfg.Docker.LabelPrefix {
-		logging.Warn("Docker label prefix changed - restart required to apply",
-			"old", oldCfg.Docker.LabelPrefix, "new", newCfg.Docker.LabelPrefix)
 	}
 
 	// Check for entrypoint changes

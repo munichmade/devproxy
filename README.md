@@ -230,9 +230,6 @@ docker:
   
   # Docker socket path
   socket: "unix:///var/run/docker.sock"
-  
-  # Prefix for container labels (e.g., devproxy.enable, devproxy.host)
-  label_prefix: "devproxy"
 
 # Logging configuration
 logging:
