@@ -185,6 +185,22 @@ func (r *Registry) Count() int {
 	return len(r.routes)
 }
 
+// GetByEntrypoint returns all routes that match a given entrypoint.
+// This is used for TCP routing when no SNI is available.
+func (r *Registry) GetByEntrypoint(entrypoint string) []*Route {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []*Route
+	for _, route := range r.routes {
+		if route.Protocol == ProtocolTCP && route.Entrypoint == entrypoint {
+			copy := *route
+			result = append(result, &copy)
+		}
+	}
+	return result
+}
+
 // Clear removes all routes from the registry.
 func (r *Registry) Clear() {
 	r.mu.Lock()

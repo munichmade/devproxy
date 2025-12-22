@@ -256,3 +256,47 @@ func parseSNIExtension(data []byte) (string, error) {
 
 	return "", nil
 }
+
+// ExtractSNIFromBytes extracts SNI from a TLS ClientHello, given the first byte already peeked.
+// It reads additional bytes from conn as needed and returns all peeked bytes for replay.
+func ExtractSNIFromBytes(firstByte []byte, conn net.Conn) (hostname string, peeked []byte, err error) {
+	reader := bufio.NewReader(conn)
+
+	// We already have the first byte, read the rest of the header (4 more bytes)
+	headerRest := make([]byte, 4)
+	_, err = io.ReadFull(reader, headerRest)
+	if err != nil {
+		return "", firstByte, fmt.Errorf("reading TLS header: %w", err)
+	}
+
+	header := append(firstByte, headerRest...)
+
+	// Get record length
+	recordLen := int(binary.BigEndian.Uint16(header[3:5]))
+	if recordLen < 4 || recordLen > 16384 {
+		return "", header, ErrInvalidClientHello
+	}
+
+	// Read the entire TLS record body
+	recordBody := make([]byte, recordLen)
+	_, err = io.ReadFull(reader, recordBody)
+	if err != nil {
+		return "", header, fmt.Errorf("reading TLS record: %w", err)
+	}
+
+	// Combine all peeked bytes
+	peeked = append(header, recordBody...)
+
+	// Parse the handshake message
+	hostname, err = parseClientHello(recordBody)
+	if err != nil {
+		return "", peeked, err
+	}
+
+	return hostname, peeked, nil
+}
+
+// UnderlyingConn returns the underlying connection from a PeekedConn.
+func (p *PeekedConn) UnderlyingConn() net.Conn {
+	return p.Conn
+}
