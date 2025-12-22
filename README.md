@@ -95,47 +95,11 @@ devproxy stop
 # Restart daemon
 devproxy restart
 
-# Reload configuration
-devproxy reload
-
 # Check status
 devproxy status
-```
 
-### Managing Domains
-
-```bash
-# List all configured domains
-devproxy domain list
-
-# Add a static domain
-devproxy domain add myapp.localhost 127.0.0.1:8080
-```
-
-### Certificate Authority
-
-```bash
-# Show CA information
-devproxy ca info
-
-# Trust the CA (run during setup)
-sudo devproxy ca trust
-
-# Untrust the CA
-sudo devproxy ca untrust
-```
-
-### Configuration
-
-```bash
-# Show current configuration
-devproxy config show
-
-# Edit configuration
-devproxy config edit
-
-# Validate configuration
-devproxy config validate
+# View logs
+devproxy logs -f
 ```
 
 ## Docker Integration
@@ -321,7 +285,6 @@ Environment variables `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are respected.
 
 Devproxy supports hot reloading of configuration changes. Changes are applied automatically when:
 - The config file is modified (file watcher)
-- A `SIGHUP` signal is received (`devproxy reload`)
 - Docker containers start/stop (automatic discovery)
 
 **Hot-reloadable settings (no restart required):**
@@ -361,9 +324,9 @@ resolvectl status
 
 ### Certificate not trusted
 
-Re-run the CA trust command:
+Re-run the setup command:
 ```bash
-sudo devproxy ca trust
+sudo devproxy setup
 ```
 
 For browsers, you may need to restart them after trusting the CA.
