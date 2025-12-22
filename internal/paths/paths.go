@@ -57,26 +57,18 @@ func Default() *Paths {
 }
 
 // resolve determines all paths based on environment and platform.
+// When started via sudo, uses the original user's paths (not root's).
 func resolve() *Paths {
 	home := homeDir()
 
 	p := &Paths{}
 
-	// When running as root, use system-wide paths
-	if os.Geteuid() == 0 {
-		p.ConfigDir = "/etc/devproxy"
-		p.DataDir = "/var/lib/devproxy"
-		p.RuntimeDir = "/var/run/devproxy"
-	} else {
-		// Config directory
-		p.ConfigDir = resolveConfigDir(home)
-
-		// Data directory
-		p.DataDir = resolveDataDir(home)
-
-		// Runtime directory
-		p.RuntimeDir = resolveRuntimeDir(home, p.DataDir)
-	}
+	// Use user paths - even when running as root via sudo,
+	// we want to use the original user's directories since
+	// we'll drop privileges after binding ports
+	p.ConfigDir = resolveConfigDir(home)
+	p.DataDir = resolveDataDir(home)
+	p.RuntimeDir = resolveRuntimeDir(home, p.DataDir)
 
 	// Subdirectories
 	p.CADir = filepath.Join(p.DataDir, "ca")
@@ -132,7 +124,18 @@ func resolveRuntimeDir(home string, dataDir string) string {
 }
 
 // homeDir returns the user's home directory.
+// When running via sudo, returns the original user's home directory.
 func homeDir() string {
+	// Check if running via sudo - use original user's home
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		// Try to get the original user's home directory
+		// On macOS/Linux, home is typically /Users/<user> or /home/<user>
+		if runtime.GOOS == "darwin" {
+			return filepath.Join("/Users", sudoUser)
+		}
+		return filepath.Join("/home", sudoUser)
+	}
+
 	if home := os.Getenv("HOME"); home != "" {
 		return home
 	}

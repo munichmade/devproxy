@@ -62,29 +62,10 @@ func runLogsMacOS() error {
 	return runLogsFromFile()
 }
 
-// findLogFile locates the log file, checking both user and system-wide locations
-// since the daemon runs as root (to bind privileged ports)
+// findLogFile locates the log file
 func findLogFile() string {
-	// Check system-wide location first (daemon runs as root)
-	systemLogFile := "/var/lib/devproxy/devproxy.log"
-	if _, err := os.Stat(systemLogFile); err == nil {
-		return systemLogFile
-	}
-
-	// Check user's data directory (for non-root runs)
-	userLogFile := filepath.Join(paths.DataDir(), "devproxy.log")
-	if _, err := os.Stat(userLogFile); err == nil {
-		return userLogFile
-	}
-
-	// Legacy: Check old root location
-	legacyLogFile := "/var/root/Library/Application Support/devproxy/devproxy.log"
-	if _, err := os.Stat(legacyLogFile); err == nil {
-		return legacyLogFile
-	}
-
-	// Default to system location (will show appropriate error)
-	return systemLogFile
+	// Use the paths module which handles sudo correctly
+	return filepath.Join(paths.DataDir(), "devproxy.log")
 }
 
 // runLogsLinux uses journalctl on Linux
@@ -120,9 +101,7 @@ func runLogsFromFile() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Println("No log file found. The daemon may not have been started yet.")
-			fmt.Printf("Checked locations:\n")
-			fmt.Printf("  - /var/lib/devproxy/devproxy.log (system)\n")
-			fmt.Printf("  - %s (user)\n", filepath.Join(paths.DataDir(), "devproxy.log"))
+			fmt.Printf("Expected: %s\n", logFile)
 			return nil
 		}
 		return fmt.Errorf("failed to open log file: %w", err)

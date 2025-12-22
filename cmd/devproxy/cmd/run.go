@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/munichmade/devproxy/internal/ca"
 	"github.com/munichmade/devproxy/internal/cert"
@@ -16,9 +17,23 @@ import (
 	"github.com/munichmade/devproxy/internal/docker"
 	"github.com/munichmade/devproxy/internal/logging"
 	"github.com/munichmade/devproxy/internal/paths"
+	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/proxy"
 	"github.com/spf13/cobra"
 )
+
+// chownRecursive changes ownership of a directory and all its contents
+func chownRecursive(path string, uid, gid int) error {
+	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip files we can't access
+		}
+		if err := syscall.Chown(name, uid, gid); err != nil {
+			return nil // Skip files we can't chown
+		}
+		return nil
+	})
+}
 
 var runCmd = &cobra.Command{
 	Use:    "run",
@@ -40,16 +55,116 @@ func init() {
 }
 
 func runDaemon() error {
+	// =========================================================================
+	// Get original user info BEFORE doing anything else
+	// This must happen first while SUDO_UID/SUDO_GID are still set
+	// =========================================================================
+	originalUser, err := privilege.GetOriginalUser()
+	if err != nil {
+		return fmt.Errorf("failed to get original user: %w", err)
+	}
+
+	// Load config first to get port settings
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	// =========================================================================
+	// PRIVILEGED SECTION - Bind to privileged ports while still root
+	// =========================================================================
+	httpCfg, _ := cfg.GetEntrypoint("http")
+	httpsCfg, _ := cfg.GetEntrypoint("https")
+
+	// Bind HTTP port (requires root for port 80)
+	httpListener, err := net.Listen("tcp", httpCfg.Listen)
+	if err != nil {
+		return fmt.Errorf("failed to bind HTTP port %s: %w", httpCfg.Listen, err)
+	}
+
+	// Bind HTTPS port (requires root for port 443)
+	httpsListener, err := net.Listen("tcp", httpsCfg.Listen)
+	if err != nil {
+		httpListener.Close()
+		return fmt.Errorf("failed to bind HTTPS port %s: %w", httpsCfg.Listen, err)
+	}
+
+	// Bind DNS port if enabled
+	var dnsListener net.PacketConn
+	if cfg.DNS.Enabled {
+		dnsListener, err = net.ListenPacket("udp", cfg.DNS.Listen)
+		if err != nil {
+			httpListener.Close()
+			httpsListener.Close()
+			return fmt.Errorf("failed to bind DNS port %s: %w", cfg.DNS.Listen, err)
+		}
+	}
+
+	// Bind TCP entrypoint ports
+	tcpListeners := make(map[string]net.Listener)
+	for name, epCfg := range cfg.Entrypoints {
+		if name == "http" || name == "https" || epCfg.TargetPort <= 0 {
+			continue
+		}
+		listener, err := net.Listen("tcp", epCfg.Listen)
+		if err != nil {
+			// Clean up already-bound listeners
+			httpListener.Close()
+			httpsListener.Close()
+			if dnsListener != nil {
+				dnsListener.Close()
+			}
+			for _, l := range tcpListeners {
+				l.Close()
+			}
+			return fmt.Errorf("failed to bind TCP entrypoint %s on %s: %w", name, epCfg.Listen, err)
+		}
+		tcpListeners[name] = listener
+	}
+
+	// =========================================================================
+	// DROP PRIVILEGES - No longer need root after binding ports
+	// =========================================================================
+	if originalUser != nil {
+		// Before dropping privileges, ensure data directories are owned by the original user
+		// This is needed because directories may have been created by root
+		dataDir := paths.DataDir()
+		runtimeDir := paths.RuntimeDir()
+
+		// Chown data directory and contents
+		if err := chownRecursive(dataDir, originalUser.UID, originalUser.GID); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to chown data directory: %v\n", err)
+		}
+
+		// Chown runtime directory
+		if err := chownRecursive(runtimeDir, originalUser.UID, originalUser.GID); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to chown runtime directory: %v\n", err)
+		}
+
+		if err := privilege.Drop(originalUser); err != nil {
+			// Clean up listeners before returning
+			httpListener.Close()
+			httpsListener.Close()
+			if dnsListener != nil {
+				dnsListener.Close()
+			}
+			for _, l := range tcpListeners {
+				l.Close()
+			}
+			return fmt.Errorf("failed to drop privileges: %w", err)
+		}
+		// Log after dropping privileges (logging not set up yet)
+		fmt.Fprintf(os.Stderr, "dropped privileges to user %s (uid=%d)\n", originalUser.Username, originalUser.UID)
+	}
+
+	// =========================================================================
+	// UNPRIVILEGED SECTION - Everything below runs as the original user
+	// =========================================================================
+
 	// Ensure log directory exists
 	logFile := paths.LogFile()
 	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
-	}
-
-	// Load config first to get logging level
-	cfg, err := config.Load()
-	if err != nil {
-		cfg = config.Default()
 	}
 
 	// Initialize logging with configured level
@@ -59,6 +174,10 @@ func runDaemon() error {
 	}
 
 	logger := slog.Default()
+
+	if originalUser != nil {
+		logging.Info("privileges dropped", "user", originalUser.Username, "uid", originalUser.UID)
+	}
 
 	// Create daemon instance for PID management
 	d := daemon.New()
@@ -115,17 +234,17 @@ func runDaemon() error {
 	logging.Info("route registry initialized")
 
 	// =========================================================================
-	// Start DNS Server (optional - can be disabled if using external DNS)
+	// Start DNS Server (using pre-bound listener)
 	// =========================================================================
 	var dnsServer *dns.Server
-	if cfg.DNS.Enabled {
+	if cfg.DNS.Enabled && dnsListener != nil {
 		dnsConfig := dns.Config{
 			Addr:      cfg.DNS.Listen,
 			Domains:   cfg.DNS.Domains,
 			ResolveIP: net.ParseIP("127.0.0.1"),
 			Upstream:  cfg.DNS.Upstream,
 		}
-		dnsServer = dns.New(dnsConfig)
+		dnsServer = dns.NewWithListener(dnsConfig, dnsListener)
 		if err := dnsServer.Start(); err != nil {
 			return fmt.Errorf("failed to start DNS server: %w", err)
 		}
@@ -135,16 +254,13 @@ func runDaemon() error {
 			}
 		})
 		logging.Info("DNS server started", "address", cfg.DNS.Listen, "domains", cfg.DNS.Domains)
-	} else {
+	} else if !cfg.DNS.Enabled {
 		logging.Info("DNS server disabled (using external DNS)")
 	}
 
 	// =========================================================================
-	// Start HTTP Server (redirects to HTTPS)
+	// Start HTTP Server (using pre-bound listener)
 	// =========================================================================
-	httpCfg, _ := cfg.GetEntrypoint("http")
-	httpsCfg, _ := cfg.GetEntrypoint("https")
-
 	// Extract HTTPS port for redirect
 	httpsPort := 443
 	if _, portStr, err := net.SplitHostPort(httpsCfg.Listen); err == nil {
@@ -153,7 +269,7 @@ func runDaemon() error {
 		}
 	}
 
-	httpServer := proxy.NewHTTPServer(httpCfg.Listen, httpsPort)
+	httpServer := proxy.NewHTTPServerWithListener(httpListener, httpsPort)
 	if err := httpServer.Start(); err != nil {
 		return fmt.Errorf("failed to start HTTP server: %w", err)
 	}
@@ -165,12 +281,12 @@ func runDaemon() error {
 	logging.Info("HTTP server started", "address", httpCfg.Listen)
 
 	// =========================================================================
-	// Start HTTPS Server
+	// Start HTTPS Server (using pre-bound listener)
 	// =========================================================================
 	proxyHandler := proxy.NewProxyHandler(registry)
 	// Wrap with access logger - logs at DEBUG level
 	accessLogger := proxy.NewAccessLogger(proxyHandler, slog.Default())
-	httpsServer := proxy.NewHTTPSServer(httpsCfg.Listen, certManager, accessLogger)
+	httpsServer := proxy.NewHTTPSServerWithListener(httpsListener, certManager, accessLogger)
 	if err := httpsServer.Start(); err != nil {
 		return fmt.Errorf("failed to start HTTPS server: %w", err)
 	}
@@ -182,7 +298,7 @@ func runDaemon() error {
 	logging.Info("HTTPS server started", "address", httpsCfg.Listen)
 
 	// =========================================================================
-	// Start TCP Entrypoints (postgres, mongo, etc.)
+	// Start TCP Entrypoints (using pre-bound listeners)
 	// =========================================================================
 	var tcpEntrypoints []*proxy.TCPEntrypoint
 	for name, epCfg := range cfg.Entrypoints {
@@ -196,6 +312,11 @@ func runDaemon() error {
 			continue
 		}
 
+		listener, ok := tcpListeners[name]
+		if !ok {
+			continue
+		}
+
 		tcpCfg := proxy.TCPEntrypointConfig{
 			Name:        name,
 			Listen:      epCfg.Listen,
@@ -205,7 +326,7 @@ func runDaemon() error {
 			Logger:      logger,
 		}
 
-		tcpEntry := proxy.NewTCPEntrypoint(tcpCfg)
+		tcpEntry := proxy.NewTCPEntrypointWithListener(tcpCfg, listener)
 		if err := tcpEntry.Start(ctx); err != nil {
 			logging.Error("failed to start TCP entrypoint", "name", name, "error", err)
 			continue

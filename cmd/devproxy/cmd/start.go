@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/munichmade/devproxy/internal/daemon"
+	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/spf13/cobra"
 )
 
@@ -15,15 +16,24 @@ var startCmd = &cobra.Command{
 	Long: `Start the devproxy daemon in the background.
 
 The daemon listens on:
-  - Port 53 for DNS queries
   - Port 80 for HTTP (redirects to HTTPS)
   - Port 443 for HTTPS
+  - Port 15353 for DNS queries
   - Port 15432 for PostgreSQL (SNI-based routing)
   - Additional configured TCP entrypoints
+
+Administrator privileges are required to bind to ports 80 and 443.
+The daemon will drop privileges after binding these ports.
 
 Use 'devproxy status' to check if the daemon is running.
 Use 'devproxy stop' to stop the daemon.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Elevate to root if needed (for binding ports 80/443)
+		if err := privilege.RequireRoot("binding to ports 80 and 443"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
+		}
+
 		d := daemon.New()
 
 		if err := d.Start(); err != nil {

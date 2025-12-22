@@ -51,6 +51,9 @@ type Server struct {
 
 	// running indicates if the server is running.
 	running bool
+
+	// prebound listener for privilege dropping
+	preboundListener net.PacketConn
 }
 
 // Config holds DNS server configuration.
@@ -104,6 +107,14 @@ func New(cfg Config) *Server {
 	}
 }
 
+// NewWithListener creates a new DNS server using a pre-bound packet listener.
+// This is used when ports are bound before dropping privileges.
+func NewWithListener(cfg Config, listener net.PacketConn) *Server {
+	s := New(cfg)
+	s.preboundListener = listener
+	return s
+}
+
 // Start starts the DNS server on both UDP and TCP.
 func (s *Server) Start() error {
 	s.mu.Lock()
@@ -123,6 +134,11 @@ func (s *Server) Start() error {
 		Handler: handler,
 	}
 
+	// If we have a prebound listener, use it
+	if s.preboundListener != nil {
+		s.udpServer.PacketConn = s.preboundListener
+	}
+
 	// Start TCP server
 	s.tcpServer = &dns.Server{
 		Addr:    s.addr,
@@ -134,7 +150,11 @@ func (s *Server) Start() error {
 	udpErrCh := make(chan error, 1)
 	go func() {
 		logging.Info("starting DNS server (UDP)", "addr", s.addr)
-		udpErrCh <- s.udpServer.ListenAndServe()
+		if s.preboundListener != nil {
+			udpErrCh <- s.udpServer.ActivateAndServe()
+		} else {
+			udpErrCh <- s.udpServer.ListenAndServe()
+		}
 	}()
 
 	// Start TCP in goroutine

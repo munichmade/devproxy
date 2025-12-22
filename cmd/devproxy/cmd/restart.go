@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/munichmade/devproxy/internal/daemon"
+	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +16,12 @@ var restartCmd = &cobra.Command{
 	Short: "Restart the devproxy daemon",
 	Long:  `Stop and start the devproxy daemon.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Elevate to root if needed (for binding ports 80/443)
+		if err := privilege.RequireRoot("binding to ports 80 and 443"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
+		}
+
 		d := daemon.New()
 
 		// Stop if running

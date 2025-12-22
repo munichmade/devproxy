@@ -70,6 +70,14 @@ func NewTCPEntrypoint(cfg TCPEntrypointConfig) *TCPEntrypoint {
 	}
 }
 
+// NewTCPEntrypointWithListener creates a new TCP entrypoint using a pre-bound listener.
+// This is used when ports are bound before dropping privileges.
+func NewTCPEntrypointWithListener(cfg TCPEntrypointConfig, listener net.Listener) *TCPEntrypoint {
+	ep := NewTCPEntrypoint(cfg)
+	ep.listener = listener
+	return ep
+}
+
 // Start begins listening for TCP connections.
 func (e *TCPEntrypoint) Start(ctx context.Context) error {
 	e.mu.Lock()
@@ -78,13 +86,16 @@ func (e *TCPEntrypoint) Start(ctx context.Context) error {
 		return errors.New("entrypoint already running")
 	}
 
-	listener, err := net.Listen("tcp", e.listen)
-	if err != nil {
-		e.mu.Unlock()
-		return fmt.Errorf("failed to listen on %s: %w", e.listen, err)
+	// If no listener was provided, create one
+	if e.listener == nil {
+		listener, err := net.Listen("tcp", e.listen)
+		if err != nil {
+			e.mu.Unlock()
+			return fmt.Errorf("failed to listen on %s: %w", e.listen, err)
+		}
+		e.listener = listener
 	}
 
-	e.listener = listener
 	e.running = true
 	e.mu.Unlock()
 

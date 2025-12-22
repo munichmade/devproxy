@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/munichmade/devproxy/internal/ca"
+	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/spf13/cobra"
 )
 
@@ -65,7 +66,7 @@ var caTrustCmd = &cobra.Command{
 This allows browsers and other applications to trust certificates signed
 by the devproxy CA without security warnings.
 
-On macOS, this adds the CA to the System Keychain and requires sudo.`,
+On macOS, this adds the CA to the System Keychain.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if !ca.Exists() {
 			fmt.Println("No CA found. Run 'devproxy ca generate' first.")
@@ -77,11 +78,13 @@ On macOS, this adds the CA to the System Keychain and requires sudo.`,
 			return
 		}
 
-		if ca.NeedsSudo() {
-			fmt.Println("Installing CA into", ca.TrustStoreName(), "(requires sudo)...")
-		} else {
-			fmt.Println("Installing CA into", ca.TrustStoreName()+"...")
+		// Elevate to root if needed
+		if err := privilege.RequireRoot("installing CA into system trust store"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
 		}
+
+		fmt.Println("Installing CA into", ca.TrustStoreName()+"...")
 
 		if err := ca.InstallTrust(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to install trust: %v\n", err)
@@ -99,13 +102,15 @@ var caUntrustCmd = &cobra.Command{
 
 This revokes trust for all certificates signed by the devproxy CA.
 
-On macOS, this removes the CA from the System Keychain and requires sudo.`,
+On macOS, this removes the CA from the System Keychain.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if ca.NeedsSudo() {
-			fmt.Println("Removing CA from", ca.TrustStoreName(), "(requires sudo)...")
-		} else {
-			fmt.Println("Removing CA from", ca.TrustStoreName()+"...")
+		// Elevate to root if needed
+		if err := privilege.RequireRoot("removing CA from system trust store"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
 		}
+
+		fmt.Println("Removing CA from", ca.TrustStoreName()+"...")
 
 		if err := ca.UninstallTrust(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to remove trust: %v\n", err)

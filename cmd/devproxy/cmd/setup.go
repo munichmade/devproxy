@@ -6,23 +6,29 @@ import (
 
 	"github.com/munichmade/devproxy/internal/ca"
 	"github.com/munichmade/devproxy/internal/config"
+	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/resolver"
 	"github.com/spf13/cobra"
 )
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Configure system for devproxy (requires sudo)",
+	Short: "Configure system for devproxy",
 	Long: `Setup configures your system for devproxy by:
 
   1. Generating a local Certificate Authority (CA) if not present
   2. Installing the CA into the system trust store
   3. Configuring DNS resolver for *.localhost domains
 
-This command requires administrator privileges and will prompt for sudo.
-The daemon must be run as root to bind to ports 80 and 443.`,
+Administrator privileges are required to install the CA and configure DNS.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		domains, _ := cmd.Flags().GetStringSlice("domain")
+
+		// Elevate to root if needed
+		if err := privilege.RequireRoot("installing CA certificate and configuring DNS resolver"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
+		}
 
 		fmt.Println("Setting up devproxy...")
 		fmt.Println()
@@ -52,10 +58,9 @@ The daemon must be run as root to bind to ports 80 and 443.`,
 		if ca.IsTrusted() {
 			fmt.Println("already trusted")
 		} else {
-			fmt.Println("installing (requires sudo)")
+			fmt.Println("installing")
 			if err := ca.InstallTrust(); err != nil {
 				fmt.Fprintf(os.Stderr, "   Failed to install CA trust: %v\n", err)
-				fmt.Fprintf(os.Stderr, "   Try running: sudo devproxy ca trust\n")
 				os.Exit(1)
 			}
 			fmt.Println("   CA installed into trust store")
@@ -67,14 +72,13 @@ The daemon must be run as root to bind to ports 80 and 443.`,
 		if resolver.IsConfigured(domains) {
 			fmt.Println("already configured")
 		} else {
-			fmt.Println("configuring (requires sudo)")
+			fmt.Println("configuring")
 			resolverCfg := resolver.Config{
 				Domains: domains,
 				Port:    dnsPort,
 			}
 			if err := resolver.Setup(resolverCfg); err != nil {
 				fmt.Fprintf(os.Stderr, "   Failed to configure resolver: %v\n", err)
-				fmt.Fprintf(os.Stderr, "   Try running: sudo devproxy dns setup\n")
 				os.Exit(1)
 			}
 			fmt.Printf("   DNS resolver configured for: %v (port %d)\n", domains, dnsPort)
@@ -83,22 +87,27 @@ The daemon must be run as root to bind to ports 80 and 443.`,
 		fmt.Println()
 		fmt.Println("Setup complete! devproxy is ready to use.")
 		fmt.Println()
-		fmt.Println("Start the daemon with: sudo devproxy start")
-		fmt.Println("(sudo is required to bind to ports 80 and 443)")
+		fmt.Println("Start the daemon with: devproxy start")
 	},
 }
 
 var teardownCmd = &cobra.Command{
 	Use:   "teardown",
-	Short: "Remove devproxy system configuration (requires sudo)",
+	Short: "Remove devproxy system configuration",
 	Long: `Teardown removes devproxy system configuration:
 
   1. Removes CA from system trust store
   2. Removes DNS resolver configuration
 
-This command requires administrator privileges.`,
+Administrator privileges are required.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		domains, _ := cmd.Flags().GetStringSlice("domain")
+
+		// Elevate to root if needed
+		if err := privilege.RequireRoot("removing CA certificate and DNS resolver configuration"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
+		}
 
 		fmt.Println("Removing devproxy configuration...")
 		fmt.Println()

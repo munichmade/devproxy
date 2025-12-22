@@ -31,6 +31,17 @@ func NewHTTPSServer(addr string, certManager *cert.Manager, handler http.Handler
 	}
 }
 
+// NewHTTPSServerWithListener creates a new HTTPS server using a pre-bound listener.
+// This is used when ports are bound before dropping privileges.
+func NewHTTPSServerWithListener(listener net.Listener, certManager *cert.Manager, handler http.Handler) *HTTPSServer {
+	return &HTTPSServer{
+		addr:        listener.Addr().String(),
+		certManager: certManager,
+		handler:     handler,
+		listener:    listener,
+	}
+}
+
 // Start starts the HTTPS server in the background.
 func (s *HTTPSServer) Start() error {
 	// Create TLS config with dynamic certificate generation
@@ -52,14 +63,17 @@ func (s *HTTPSServer) Start() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// Create listener
-	ln, err := net.Listen("tcp", s.addr)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", s.addr, err)
+	// If no listener was provided, create one
+	if s.listener == nil {
+		ln, err := net.Listen("tcp", s.addr)
+		if err != nil {
+			return fmt.Errorf("failed to listen on %s: %w", s.addr, err)
+		}
+		s.listener = ln
 	}
 
 	// Wrap with TLS
-	s.listener = tls.NewListener(ln, tlsConfig)
+	s.listener = tls.NewListener(s.listener, tlsConfig)
 
 	// Start serving in background
 	go func() {

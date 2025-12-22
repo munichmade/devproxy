@@ -11,10 +11,10 @@ import (
 
 // HTTPServer handles HTTP requests and redirects them to HTTPS.
 type HTTPServer struct {
-	addr       string
-	httpsPort  int
-	server     *http.Server
-	listener   net.Listener
+	addr      string
+	httpsPort int
+	server    *http.Server
+	listener  net.Listener
 }
 
 // NewHTTPServer creates a new HTTP server that redirects to HTTPS.
@@ -26,13 +26,26 @@ func NewHTTPServer(addr string, httpsPort int) *HTTPServer {
 	}
 }
 
+// NewHTTPServerWithListener creates a new HTTP server using a pre-bound listener.
+// This is used when ports are bound before dropping privileges.
+func NewHTTPServerWithListener(listener net.Listener, httpsPort int) *HTTPServer {
+	return &HTTPServer{
+		addr:      listener.Addr().String(),
+		httpsPort: httpsPort,
+		listener:  listener,
+	}
+}
+
 // Start begins listening for HTTP requests.
 func (s *HTTPServer) Start() error {
-	listener, err := net.Listen("tcp", s.addr)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", s.addr, err)
+	// If no listener was provided, create one
+	if s.listener == nil {
+		listener, err := net.Listen("tcp", s.addr)
+		if err != nil {
+			return fmt.Errorf("failed to listen on %s: %w", s.addr, err)
+		}
+		s.listener = listener
 	}
-	s.listener = listener
 
 	s.server = &http.Server{
 		Handler:      s,
@@ -42,7 +55,7 @@ func (s *HTTPServer) Start() error {
 	}
 
 	go func() {
-		if err := s.server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := s.server.Serve(s.listener); err != nil && err != http.ErrServerClosed {
 			// Log error but don't crash - server may have been stopped
 		}
 	}()

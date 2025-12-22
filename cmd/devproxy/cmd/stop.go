@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/munichmade/devproxy/internal/daemon"
+	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +16,18 @@ var stopCmd = &cobra.Command{
 	Long:  `Stop the running devproxy daemon gracefully.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		d := daemon.New()
+
+		// Check if running first - don't elevate if not needed
+		if !d.IsRunning() {
+			fmt.Println("devproxy is not running")
+			os.Exit(1)
+		}
+
+		// Elevate to root if needed (to send signal to root-started process)
+		if err := privilege.RequireRoot("stopping the daemon"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to elevate privileges: %v\n", err)
+			os.Exit(1)
+		}
 
 		if err := d.Stop(); err != nil {
 			if errors.Is(err, daemon.ErrNotRunning) {
