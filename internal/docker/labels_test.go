@@ -186,3 +186,137 @@ func TestLabelParser_IsEnabled(t *testing.T) {
 		}
 	})
 }
+
+// Wildcard host validation tests
+
+func TestLabelParser_WildcardValidHosts(t *testing.T) {
+	parser := NewLabelParser()
+
+	validWildcards := []string{
+		"*.localhost",
+		"*.app.localhost",
+		"*.myapp.localhost",
+		"*.sub.domain.localhost",
+	}
+
+	for _, host := range validWildcards {
+		t.Run(host, func(t *testing.T) {
+			labels := map[string]string{
+				"devproxy.enable": "true",
+				"devproxy.host":   host,
+			}
+
+			configs, err := parser.ParseLabels(labels)
+			if err != nil {
+				t.Errorf("expected valid wildcard %q to be accepted, got error: %v", host, err)
+			}
+			if len(configs) != 1 {
+				t.Errorf("expected 1 config, got %d", len(configs))
+			}
+			if configs[0].Host != host {
+				t.Errorf("expected host %q, got %q", host, configs[0].Host)
+			}
+		})
+	}
+}
+
+func TestLabelParser_WildcardInvalidHosts(t *testing.T) {
+	parser := NewLabelParser()
+
+	invalidWildcards := []struct {
+		host   string
+		reason string
+	}{
+		{"*app.localhost", "missing dot after asterisk"},
+		{"*.", "empty pattern after *."},
+		{"**.localhost", "double asterisk"},
+		{"*..", "double dot after asterisk"},
+		{"*", "asterisk only"},
+	}
+
+	for _, tc := range invalidWildcards {
+		t.Run(tc.host+" ("+tc.reason+")", func(t *testing.T) {
+			labels := map[string]string{
+				"devproxy.enable": "true",
+				"devproxy.host":   tc.host,
+			}
+
+			_, err := parser.ParseLabels(labels)
+			if err == nil {
+				t.Errorf("expected invalid wildcard %q to be rejected (%s)", tc.host, tc.reason)
+			}
+		})
+	}
+}
+
+func TestLabelParser_WildcardMixedHosts(t *testing.T) {
+	parser := NewLabelParser()
+
+	t.Run("comma-separated exact and wildcard", func(t *testing.T) {
+		labels := map[string]string{
+			"devproxy.enable": "true",
+			"devproxy.host":   "myapp.localhost,*.myapp.localhost",
+		}
+
+		configs, err := parser.ParseLabels(labels)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(configs) != 1 {
+			t.Fatalf("expected 1 config, got %d", len(configs))
+		}
+
+		// Host field contains comma-separated value; splitting happens in sync.go
+		expected := "myapp.localhost,*.myapp.localhost"
+		if configs[0].Host != expected {
+			t.Errorf("expected host %q, got %q", expected, configs[0].Host)
+		}
+	})
+
+	t.Run("comma-separated with invalid wildcard fails", func(t *testing.T) {
+		labels := map[string]string{
+			"devproxy.enable": "true",
+			"devproxy.host":   "myapp.localhost,*myapp.localhost",
+		}
+
+		_, err := parser.ParseLabels(labels)
+		if err == nil {
+			t.Error("expected error for invalid wildcard in comma-separated list")
+		}
+	})
+}
+
+func TestLabelParser_WildcardMultiService(t *testing.T) {
+	parser := NewLabelParser()
+
+	t.Run("multi-service with wildcard hosts", func(t *testing.T) {
+		labels := map[string]string{
+			"devproxy.enable":            "true",
+			"devproxy.services.web.host": "*.app.localhost",
+			"devproxy.services.web.port": "3000",
+			"devproxy.services.api.host": "api.localhost",
+			"devproxy.services.api.port": "4000",
+		}
+
+		configs, err := parser.ParseLabels(labels)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(configs) != 2 {
+			t.Fatalf("expected 2 configs, got %d", len(configs))
+		}
+	})
+
+	t.Run("multi-service with invalid wildcard fails", func(t *testing.T) {
+		labels := map[string]string{
+			"devproxy.enable":            "true",
+			"devproxy.services.web.host": "*app.localhost",
+			"devproxy.services.web.port": "3000",
+		}
+
+		_, err := parser.ParseLabels(labels)
+		if err == nil {
+			t.Error("expected error for invalid wildcard in multi-service")
+		}
+	})
+}

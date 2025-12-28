@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/docker/docker/api/types/container"
@@ -129,45 +130,54 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 	var hosts []string
 	s.logger.Debug("registering routes", "container", event.ContainerName, "count", len(configs))
 	for _, config := range configs {
-		backend := fmt.Sprintf("%s:%d", ip, config.Port)
-		s.logger.Debug("creating route", "host", config.Host, "backend", backend)
+		// Split comma-separated hosts into individual hosts
+		hostList := strings.Split(config.Host, ",")
+		for _, host := range hostList {
+			host = strings.TrimSpace(host)
+			if host == "" {
+				continue
+			}
 
-		route := proxy.Route{
-			Host:          config.Host,
-			Backend:       backend,
-			Protocol:      s.getProtocol(config),
-			Entrypoint:    config.Entrypoint,
-			ContainerID:   event.ContainerID,
-			ContainerName: containerName,
-		}
+			backend := fmt.Sprintf("%s:%d", ip, config.Port)
+			s.logger.Debug("creating route", "host", host, "backend", backend)
 
-		if err := s.registry.Add(route); err != nil {
-			s.logger.Warn("failed to add route",
-				"host", config.Host,
-				"error", err)
-			continue
-		}
+			route := proxy.Route{
+				Host:          host,
+				Backend:       backend,
+				Protocol:      s.getProtocol(config),
+				Entrypoint:    config.Entrypoint,
+				ContainerID:   event.ContainerID,
+				ContainerName: containerName,
+			}
 
-		s.logger.Info("route added successfully",
-			"host", config.Host,
-			"backend", backend,
-			"container", containerName)
-
-		hosts = append(hosts, config.Host)
-		s.logger.Info("route added",
-			"host", config.Host,
-			"backend", backend,
-			"container", containerName)
-
-		// Pre-generate certificate for the domain
-		if s.certManager != nil {
-			if err := s.certManager.EnsureCertificate(config.Host); err != nil {
-				s.logger.Warn("failed to pre-generate certificate",
-					"host", config.Host,
+			if err := s.registry.Add(route); err != nil {
+				s.logger.Warn("failed to add route",
+					"host", host,
 					"error", err)
-			} else {
-				s.logger.Debug("certificate ready",
-					"host", config.Host)
+				continue
+			}
+
+			s.logger.Info("route added successfully",
+				"host", host,
+				"backend", backend,
+				"container", containerName)
+
+			hosts = append(hosts, host)
+			s.logger.Info("route added",
+				"host", host,
+				"backend", backend,
+				"container", containerName)
+
+			// Pre-generate certificate for the domain
+			if s.certManager != nil {
+				if err := s.certManager.EnsureCertificate(host); err != nil {
+					s.logger.Warn("failed to pre-generate certificate",
+						"host", host,
+						"error", err)
+				} else {
+					s.logger.Debug("certificate ready",
+						"host", host)
+				}
 			}
 		}
 	}

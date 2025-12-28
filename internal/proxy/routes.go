@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,8 +27,15 @@ const (
 
 // Route represents a proxy route from a host to a backend.
 type Route struct {
-	// Host is the domain name to match (e.g., "app.localhost").
+	// Host is the domain name to match (e.g., "app.localhost" or "*.app.localhost").
 	Host string
+
+	// IsWildcard indicates if this is a wildcard route (e.g., "*.app.localhost").
+	IsWildcard bool
+
+	// Pattern is the base domain for wildcard routes (e.g., "app.localhost" for "*.app.localhost").
+	// Empty for exact routes.
+	Pattern string
 
 	// Backend is the upstream address (e.g., "172.18.0.3:3000").
 	Backend string
@@ -50,14 +58,33 @@ type Route struct {
 
 // Errors for route operations.
 var (
-	ErrRouteExists   = errors.New("route already exists")
-	ErrRouteNotFound = errors.New("route not found")
+	ErrRouteExists         = errors.New("route already exists")
+	ErrWildcardRouteExists = errors.New("wildcard route already exists for this pattern")
+	ErrRouteNotFound       = errors.New("route not found")
 )
+
+// isWildcardHost checks if host is a wildcard pattern (e.g., "*.app.localhost").
+func isWildcardHost(host string) bool {
+	return strings.HasPrefix(host, "*.")
+}
+
+// wildcardPattern extracts the base domain from a wildcard host.
+// e.g., "*.app.localhost" -> "app.localhost"
+func wildcardPattern(host string) string {
+	return strings.TrimPrefix(host, "*.")
+}
+
+// matchWildcard checks if host matches a wildcard pattern (any subdomain depth).
+// e.g., host "sub.team.app.localhost" matches pattern "app.localhost"
+func matchWildcard(host, pattern string) bool {
+	return strings.HasSuffix(host, "."+pattern)
+}
 
 // Registry is a thread-safe registry of proxy routes.
 type Registry struct {
-	mu     sync.RWMutex
-	routes map[string]*Route
+	mu             sync.RWMutex
+	routes         map[string]*Route // exact host -> route
+	wildcardRoutes map[string]*Route // pattern (e.g., "app.localhost") -> route
 
 	// onChange is called when routes are added or removed.
 	onChange func()
@@ -66,7 +93,8 @@ type Registry struct {
 // NewRegistry creates a new route registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		routes: make(map[string]*Route),
+		routes:         make(map[string]*Route),
+		wildcardRoutes: make(map[string]*Route),
 	}
 }
 
@@ -78,21 +106,37 @@ func (r *Registry) OnChange(fn func()) {
 }
 
 // Add adds a new route to the registry.
-// Returns ErrRouteExists if a route for the host already exists.
+// Returns ErrRouteExists if an exact route for the host already exists.
+// Returns ErrWildcardRouteExists if a wildcard route for the pattern already exists.
 func (r *Registry) Add(route Route) error {
 	r.mu.Lock()
-
-	if _, exists := r.routes[route.Host]; exists {
-		r.mu.Unlock()
-		return ErrRouteExists
-	}
 
 	// Set creation time if not provided
 	if route.CreatedAt.IsZero() {
 		route.CreatedAt = time.Now()
 	}
 
-	r.routes[route.Host] = &route
+	if isWildcardHost(route.Host) {
+		// Handle wildcard route
+		route.IsWildcard = true
+		route.Pattern = wildcardPattern(route.Host)
+
+		if _, exists := r.wildcardRoutes[route.Pattern]; exists {
+			r.mu.Unlock()
+			return ErrWildcardRouteExists
+		}
+
+		r.wildcardRoutes[route.Pattern] = &route
+	} else {
+		// Handle exact route
+		if _, exists := r.routes[route.Host]; exists {
+			r.mu.Unlock()
+			return ErrRouteExists
+		}
+
+		r.routes[route.Host] = &route
+	}
+
 	onChange := r.onChange
 	r.mu.Unlock()
 
@@ -109,12 +153,21 @@ func (r *Registry) Add(route Route) error {
 func (r *Registry) Remove(host string) error {
 	r.mu.Lock()
 
-	if _, exists := r.routes[host]; !exists {
-		r.mu.Unlock()
-		return ErrRouteNotFound
+	if isWildcardHost(host) {
+		pattern := wildcardPattern(host)
+		if _, exists := r.wildcardRoutes[pattern]; !exists {
+			r.mu.Unlock()
+			return ErrRouteNotFound
+		}
+		delete(r.wildcardRoutes, pattern)
+	} else {
+		if _, exists := r.routes[host]; !exists {
+			r.mu.Unlock()
+			return ErrRouteNotFound
+		}
+		delete(r.routes, host)
 	}
 
-	delete(r.routes, host)
 	onChange := r.onChange
 	r.mu.Unlock()
 
@@ -132,9 +185,19 @@ func (r *Registry) RemoveByContainerID(containerID string) int {
 	r.mu.Lock()
 
 	var removed int
+
+	// Remove from exact routes
 	for host, route := range r.routes {
 		if route.ContainerID == containerID {
 			delete(r.routes, host)
+			removed++
+		}
+	}
+
+	// Remove from wildcard routes
+	for pattern, route := range r.wildcardRoutes {
+		if route.ContainerID == containerID {
+			delete(r.wildcardRoutes, pattern)
 			removed++
 		}
 	}
@@ -150,20 +213,42 @@ func (r *Registry) RemoveByContainerID(containerID string) int {
 	return removed
 }
 
+// findMostSpecificWildcard finds the most specific matching wildcard route.
+// More specific = longer pattern (more domain segments).
+// Must be called with r.mu held.
+func (r *Registry) findMostSpecificWildcard(host string) *Route {
+	var bestMatch *Route
+	var bestLen int
+
+	for pattern, route := range r.wildcardRoutes {
+		if matchWildcard(host, pattern) && len(pattern) > bestLen {
+			bestMatch = route
+			bestLen = len(pattern)
+		}
+	}
+	return bestMatch
+}
+
 // Lookup finds a route by host.
+// Priority: exact match > most specific wildcard.
 // Returns nil if not found.
 func (r *Registry) Lookup(host string) *Route {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	route, exists := r.routes[host]
-	if !exists {
-		return nil
+	// 1. Try exact match first (highest priority)
+	if route, exists := r.routes[host]; exists {
+		copy := *route
+		return &copy
 	}
 
-	// Return a copy to prevent mutation
-	copy := *route
-	return &copy
+	// 2. Try wildcard match (most specific wins)
+	if route := r.findMostSpecificWildcard(host); route != nil {
+		copy := *route
+		return &copy
+	}
+
+	return nil
 }
 
 // List returns a snapshot of all routes, sorted by host.
@@ -171,8 +256,15 @@ func (r *Registry) List() []Route {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	routes := make([]Route, 0, len(r.routes))
+	routes := make([]Route, 0, len(r.routes)+len(r.wildcardRoutes))
+
+	// Add exact routes
 	for _, route := range r.routes {
+		routes = append(routes, *route)
+	}
+
+	// Add wildcard routes
+	for _, route := range r.wildcardRoutes {
 		routes = append(routes, *route)
 	}
 
@@ -188,7 +280,7 @@ func (r *Registry) List() []Route {
 func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return len(r.routes)
+	return len(r.routes) + len(r.wildcardRoutes)
 }
 
 // GetByEntrypoint returns all routes that match a given entrypoint.
@@ -211,8 +303,9 @@ func (r *Registry) GetByEntrypoint(entrypoint string) []*Route {
 func (r *Registry) Clear() {
 	r.mu.Lock()
 
-	hadRoutes := len(r.routes) > 0
+	hadRoutes := len(r.routes) > 0 || len(r.wildcardRoutes) > 0
 	r.routes = make(map[string]*Route)
+	r.wildcardRoutes = make(map[string]*Route)
 	onChange := r.onChange
 	r.mu.Unlock()
 
@@ -235,8 +328,15 @@ type RouteState struct {
 // SaveState writes the current routes to a state file for IPC with CLI.
 func (r *Registry) SaveState() error {
 	r.mu.RLock()
-	routes := make([]Route, 0, len(r.routes))
+	routes := make([]Route, 0, len(r.routes)+len(r.wildcardRoutes))
+
+	// Add exact routes
 	for _, route := range r.routes {
+		routes = append(routes, *route)
+	}
+
+	// Add wildcard routes
+	for _, route := range r.wildcardRoutes {
 		routes = append(routes, *route)
 	}
 	r.mu.RUnlock()
