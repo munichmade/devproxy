@@ -131,6 +131,58 @@ func TestRouteSync_GetProtocol(t *testing.T) {
 	})
 }
 
+func TestRouteSync_CommaSeparatedHosts(t *testing.T) {
+	t.Run("splits comma-separated hosts into separate routes", func(t *testing.T) {
+		registry := proxy.NewRegistry()
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		sync := NewRouteSync(registry, nil, "bridge", logger)
+
+		// Manually simulate what handleStart does after IP resolution
+		// by adding routes for each host in a comma-separated list
+		hosts := []string{"app.localhost", "*.app.localhost"}
+		containerID := "container789"
+
+		for _, host := range hosts {
+			registry.Add(proxy.Route{
+				Host:        host,
+				Backend:     "172.17.0.5:4000",
+				ContainerID: containerID,
+			})
+		}
+
+		sync.mu.Lock()
+		sync.containers[containerID] = hosts
+		sync.mu.Unlock()
+
+		// Verify both routes exist
+		exactRoute := registry.Lookup("app.localhost")
+		if exactRoute == nil {
+			t.Error("expected exact route to exist")
+		}
+
+		wildcardRoute := registry.Lookup("team-a.app.localhost")
+		if wildcardRoute == nil {
+			t.Error("expected wildcard route to match subdomain")
+		}
+
+		// Verify count
+		if registry.Count() != 2 {
+			t.Errorf("expected 2 routes, got %d", registry.Count())
+		}
+
+		// Stop should remove both
+		event := ContainerEvent{
+			ContainerID: containerID,
+			Type:        "stop",
+		}
+		sync.HandleEvent(event)
+
+		if registry.Count() != 0 {
+			t.Errorf("expected 0 routes after stop, got %d", registry.Count())
+		}
+	})
+}
+
 func TestRouteSync_ContainerTracking(t *testing.T) {
 	t.Run("removes tracked hosts on stop", func(t *testing.T) {
 		registry := proxy.NewRegistry()
