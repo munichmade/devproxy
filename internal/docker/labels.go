@@ -73,6 +73,14 @@ func (p *LabelParser) parseSingleService(labels map[string]string) ([]ServiceCon
 		return nil, fmt.Errorf("missing required label: %s", hostKey)
 	}
 
+	// Validate host (may be comma-separated for multiple hosts)
+	for _, h := range strings.Split(host, ",") {
+		h = strings.TrimSpace(h)
+		if err := validateHost(h); err != nil {
+			return nil, fmt.Errorf("invalid host in label %s: %w", hostKey, err)
+		}
+	}
+
 	config := ServiceConfig{
 		Host:       host,
 		Port:       80, // Default port
@@ -134,6 +142,14 @@ func (p *LabelParser) parseMultiService(labels map[string]string) ([]ServiceConf
 			return nil, fmt.Errorf("service %q missing required field: host", name)
 		}
 
+		// Validate host (may be comma-separated for multiple hosts)
+		for _, h := range strings.Split(host, ",") {
+			h = strings.TrimSpace(h)
+			if err := validateHost(h); err != nil {
+				return nil, fmt.Errorf("service %q has invalid host: %w", name, err)
+			}
+		}
+
 		config := ServiceConfig{
 			Name:       name,
 			Host:       host,
@@ -163,4 +179,49 @@ func (p *LabelParser) parseMultiService(labels map[string]string) ([]ServiceConf
 func (p *LabelParser) IsEnabled(labels map[string]string) bool {
 	enableKey := p.prefix + ".enable"
 	return labels[enableKey] == "true"
+}
+
+// isValidWildcard validates wildcard host syntax (e.g., "*.app.localhost").
+func isValidWildcard(host string) bool {
+	if !strings.HasPrefix(host, "*.") {
+		return false
+	}
+	pattern := strings.TrimPrefix(host, "*.")
+	// Must have at least one character after "*." and not start with another dot
+	return len(pattern) > 0 && !strings.HasPrefix(pattern, ".")
+}
+
+// isValidHost validates a host string (exact or wildcard).
+func isValidHost(host string) bool {
+	if host == "" {
+		return false
+	}
+
+	// Check for wildcard pattern
+	if strings.HasPrefix(host, "*") {
+		return isValidWildcard(host)
+	}
+
+	// Basic validation for exact hosts: not empty, doesn't start/end with dot
+	return !strings.HasPrefix(host, ".") && !strings.HasSuffix(host, ".")
+}
+
+// validateHost validates a host and returns an error if invalid.
+func validateHost(host string) error {
+	if host == "" {
+		return fmt.Errorf("host cannot be empty")
+	}
+
+	if strings.HasPrefix(host, "*") {
+		if !isValidWildcard(host) {
+			return fmt.Errorf("invalid wildcard host %q: must be in format *.domain.tld", host)
+		}
+		return nil
+	}
+
+	if !isValidHost(host) {
+		return fmt.Errorf("invalid host %q", host)
+	}
+
+	return nil
 }
