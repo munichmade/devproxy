@@ -251,3 +251,280 @@ func TestRegistry_LookupReturnsACopy(t *testing.T) {
 		t.Error("expected Lookup to return a copy, but original was modified")
 	}
 }
+
+// Wildcard routing tests
+
+func TestRegistry_WildcardBasicMatching(t *testing.T) {
+	reg := NewRegistry()
+
+	// Add wildcard route
+	err := reg.Add(Route{
+		Host:    "*.app.localhost",
+		Backend: "127.0.0.1:3000",
+	})
+	if err != nil {
+		t.Fatalf("failed to add wildcard route: %v", err)
+	}
+
+	t.Run("matches single-level subdomain", func(t *testing.T) {
+		found := reg.Lookup("team-a.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route for team-a.app.localhost")
+		}
+		if found.Backend != "127.0.0.1:3000" {
+			t.Errorf("expected backend 127.0.0.1:3000, got %s", found.Backend)
+		}
+	})
+
+	t.Run("matches multi-level subdomain", func(t *testing.T) {
+		found := reg.Lookup("sub.team-a.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route for sub.team-a.app.localhost")
+		}
+	})
+
+	t.Run("matches deep subdomain", func(t *testing.T) {
+		found := reg.Lookup("a.b.c.d.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route for a.b.c.d.app.localhost")
+		}
+	})
+
+	t.Run("does not match base domain", func(t *testing.T) {
+		found := reg.Lookup("app.localhost")
+		if found != nil {
+			t.Error("wildcard should not match base domain app.localhost")
+		}
+	})
+
+	t.Run("does not match unrelated domain", func(t *testing.T) {
+		found := reg.Lookup("other.localhost")
+		if found != nil {
+			t.Error("wildcard should not match unrelated domain")
+		}
+	})
+}
+
+func TestRegistry_WildcardIsWildcardFlag(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+
+	found := reg.Lookup("sub.app.localhost")
+	if found == nil {
+		t.Fatal("expected to find route")
+	}
+	if !found.IsWildcard {
+		t.Error("expected IsWildcard to be true")
+	}
+	if found.Pattern != "app.localhost" {
+		t.Errorf("expected Pattern 'app.localhost', got %q", found.Pattern)
+	}
+}
+
+func TestRegistry_WildcardPriorityExactBeatsWildcard(t *testing.T) {
+	reg := NewRegistry()
+
+	// Add wildcard first
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+	// Add exact match
+	reg.Add(Route{Host: "admin.app.localhost", Backend: "127.0.0.1:4000"})
+
+	t.Run("exact match wins over wildcard", func(t *testing.T) {
+		found := reg.Lookup("admin.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route")
+		}
+		if found.Backend != "127.0.0.1:4000" {
+			t.Errorf("expected exact match backend 127.0.0.1:4000, got %s", found.Backend)
+		}
+		if found.IsWildcard {
+			t.Error("expected exact match, not wildcard")
+		}
+	})
+
+	t.Run("wildcard still matches other subdomains", func(t *testing.T) {
+		found := reg.Lookup("team-a.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route")
+		}
+		if found.Backend != "127.0.0.1:3000" {
+			t.Errorf("expected wildcard backend 127.0.0.1:3000, got %s", found.Backend)
+		}
+	})
+}
+
+func TestRegistry_WildcardPriorityMostSpecificWins(t *testing.T) {
+	reg := NewRegistry()
+
+	// Add broader wildcard first
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+	// Add more specific wildcard
+	reg.Add(Route{Host: "*.team-a.app.localhost", Backend: "127.0.0.1:4000"})
+
+	t.Run("more specific wildcard wins", func(t *testing.T) {
+		found := reg.Lookup("sub.team-a.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route")
+		}
+		if found.Backend != "127.0.0.1:4000" {
+			t.Errorf("expected more specific wildcard backend 127.0.0.1:4000, got %s", found.Backend)
+		}
+	})
+
+	t.Run("broader wildcard matches other subdomains", func(t *testing.T) {
+		found := reg.Lookup("team-b.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route")
+		}
+		if found.Backend != "127.0.0.1:3000" {
+			t.Errorf("expected broader wildcard backend 127.0.0.1:3000, got %s", found.Backend)
+		}
+	})
+}
+
+func TestRegistry_WildcardDuplicateRejection(t *testing.T) {
+	reg := NewRegistry()
+
+	err := reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+	if err != nil {
+		t.Fatalf("failed to add first wildcard: %v", err)
+	}
+
+	// Try to add duplicate wildcard
+	err = reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:4000"})
+	if err == nil {
+		t.Error("expected error when adding duplicate wildcard")
+	}
+	if err != ErrWildcardRouteExists {
+		t.Errorf("expected ErrWildcardRouteExists, got %v", err)
+	}
+}
+
+func TestRegistry_WildcardMixedWithExact(t *testing.T) {
+	reg := NewRegistry()
+
+	// Add both exact and wildcard for same base domain
+	reg.Add(Route{Host: "app.localhost", Backend: "127.0.0.1:3000"})
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:4000"})
+
+	t.Run("exact base domain matches exact route", func(t *testing.T) {
+		found := reg.Lookup("app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route")
+		}
+		if found.Backend != "127.0.0.1:3000" {
+			t.Errorf("expected exact backend 127.0.0.1:3000, got %s", found.Backend)
+		}
+		if found.IsWildcard {
+			t.Error("expected exact match, not wildcard")
+		}
+	})
+
+	t.Run("subdomain matches wildcard route", func(t *testing.T) {
+		found := reg.Lookup("sub.app.localhost")
+		if found == nil {
+			t.Fatal("expected to find route")
+		}
+		if found.Backend != "127.0.0.1:4000" {
+			t.Errorf("expected wildcard backend 127.0.0.1:4000, got %s", found.Backend)
+		}
+		if !found.IsWildcard {
+			t.Error("expected wildcard match")
+		}
+	})
+}
+
+func TestRegistry_WildcardRemove(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+
+	// Verify it exists
+	if reg.Lookup("sub.app.localhost") == nil {
+		t.Fatal("expected wildcard route to exist")
+	}
+
+	// Remove wildcard
+	err := reg.Remove("*.app.localhost")
+	if err != nil {
+		t.Fatalf("failed to remove wildcard: %v", err)
+	}
+
+	// Verify it's gone
+	if reg.Lookup("sub.app.localhost") != nil {
+		t.Error("expected wildcard route to be removed")
+	}
+}
+
+func TestRegistry_WildcardRemoveByContainerID(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000", ContainerID: "abc123"})
+	reg.Add(Route{Host: "exact.localhost", Backend: "127.0.0.1:4000", ContainerID: "abc123"})
+	reg.Add(Route{Host: "*.other.localhost", Backend: "127.0.0.1:5000", ContainerID: "def456"})
+
+	removed := reg.RemoveByContainerID("abc123")
+	if removed != 2 {
+		t.Errorf("expected 2 routes removed, got %d", removed)
+	}
+
+	if reg.Lookup("sub.app.localhost") != nil {
+		t.Error("expected wildcard route to be removed")
+	}
+	if reg.Lookup("exact.localhost") != nil {
+		t.Error("expected exact route to be removed")
+	}
+	if reg.Lookup("sub.other.localhost") == nil {
+		t.Error("expected other wildcard route to still exist")
+	}
+}
+
+func TestRegistry_WildcardList(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+	reg.Add(Route{Host: "app.localhost", Backend: "127.0.0.1:4000"})
+	reg.Add(Route{Host: "*.alpha.localhost", Backend: "127.0.0.1:5000"})
+
+	routes := reg.List()
+
+	if len(routes) != 3 {
+		t.Fatalf("expected 3 routes, got %d", len(routes))
+	}
+
+	// Should be sorted by host (wildcards sort with their pattern)
+	expectedOrder := []string{"*.alpha.localhost", "*.app.localhost", "app.localhost"}
+	for i, expected := range expectedOrder {
+		if routes[i].Host != expected {
+			t.Errorf("expected routes[%d].Host = %q, got %q", i, expected, routes[i].Host)
+		}
+	}
+}
+
+func TestRegistry_WildcardCount(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+	reg.Add(Route{Host: "app.localhost", Backend: "127.0.0.1:4000"})
+
+	if reg.Count() != 2 {
+		t.Errorf("expected count 2, got %d", reg.Count())
+	}
+}
+
+func TestRegistry_WildcardClear(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Add(Route{Host: "*.app.localhost", Backend: "127.0.0.1:3000"})
+	reg.Add(Route{Host: "app.localhost", Backend: "127.0.0.1:4000"})
+
+	reg.Clear()
+
+	if reg.Count() != 0 {
+		t.Errorf("expected count 0 after clear, got %d", reg.Count())
+	}
+	if reg.Lookup("sub.app.localhost") != nil {
+		t.Error("expected wildcard route to be cleared")
+	}
+}
