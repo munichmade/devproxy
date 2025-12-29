@@ -272,6 +272,37 @@ func TestReverseProxy_ProxyHeaders(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves original Host header", func(t *testing.T) {
+		var receivedHost string
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedHost = r.Host
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer backend.Close()
+
+		backendAddr := strings.TrimPrefix(backend.URL, "http://")
+
+		registry := NewRegistry()
+		registry.Add(Route{
+			Host:     "app.localhost",
+			Backend:  backendAddr,
+			Protocol: ProtocolHTTP,
+		})
+
+		rp := NewReverseProxy(registry)
+
+		req := httptest.NewRequest(http.MethodGet, "http://app.localhost/", nil)
+		req.Host = "app.localhost:443"
+		w := httptest.NewRecorder()
+
+		rp.ServeHTTP(w, req)
+
+		// The backend should receive the original Host header, not the backend address
+		if receivedHost != "app.localhost:443" {
+			t.Errorf("expected Host header 'app.localhost:443', got '%s'", receivedHost)
+		}
+	})
+
 	t.Run("sets X-Real-IP header", func(t *testing.T) {
 		var receivedRealIP string
 		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -380,8 +411,8 @@ func TestReverseProxy_WebSocket(t *testing.T) {
 
 func TestIsWebSocketRequest(t *testing.T) {
 	tests := []struct {
-		name       string
-		headers    map[string]string
+		name        string
+		headers     map[string]string
 		isWebSocket bool
 	}{
 		{

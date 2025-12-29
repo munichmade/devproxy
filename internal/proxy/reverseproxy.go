@@ -69,10 +69,10 @@ func (rp *ReverseProxy) createProxy(target *url.URL, originalReq *http.Request) 
 			req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 		}
 
-		// Set Host header to target (some backends require this)
-		if _, ok := req.Header["Host"]; !ok {
-			req.Host = target.Host
-		}
+		// Preserve original Host header for the backend
+		// Most applications expect the original Host header for virtual hosting,
+		// URL generation, and multi-tenant routing
+		req.Host = originalReq.Host
 
 		// Set proxy headers
 		clientIP := getClientIP(originalReq)

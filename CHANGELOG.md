@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable entrypoints for PostgreSQL, MySQL, MongoDB, Redis, and custom TCP services
 
 ### Fixed
+- Reverse proxy now preserves original Host header for backend requests
 - Route registry deadlock when removing routes on container stop
 - Port availability check now correctly distinguishes between "in use" and "needs sudo"
 - Daemon stop command now waits for process to actually terminate
