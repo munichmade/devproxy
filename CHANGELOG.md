@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Wildcard domain routing support (e.g., `*.app.localhost`) for dynamic subdomains
 - Initial release of DevProxy
 - Certificate Authority (CA) management with automatic trust store integration
@@ -26,23 +27,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable entrypoints for PostgreSQL, MySQL, MongoDB, Redis, and custom TCP services
 
 ### Fixed
+
 - Reverse proxy now preserves original Host header for backend requests
 - Route registry deadlock when removing routes on container stop
 - Port availability check now correctly distinguishes between "in use" and "needs sudo"
 - Daemon stop command now waits for process to actually terminate
 
 ### Changed
+
 - DNS server uses unprivileged port 15353 by default (resolver configured via setup)
 - Simplified CLI by removing redundant commands (ca, config, domain, dns, reload)
 - Label prefix is now hardcoded to "devproxy" (removed from config)
 - Access logging is now hot-reloadable and disabled by default
 
 ### Security
+
 - Private CA keys stored with restricted permissions (0600)
 - Certificates generated with proper key usage extensions
 - Support for both RSA and ECDSA certificate types
 
-## [0.1.0] - 2024-12-21
+## [0.0.1] - 2025-12-21
 
 ### Added
+
 - Initial development release
