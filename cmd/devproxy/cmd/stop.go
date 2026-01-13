@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/munichmade/devproxy/internal/daemon"
 	"github.com/munichmade/devproxy/internal/privilege"
-	"github.com/spf13/cobra"
 )
 
 var stopCmd = &cobra.Command{

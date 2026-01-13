@@ -4,6 +4,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -56,7 +57,7 @@ func (s *HTTPServer) Start() error {
 
 	go func() {
 		if err := s.server.Serve(s.listener); err != nil && err != http.ErrServerClosed {
-			// Log error but don't crash - server may have been stopped
+			slog.Error("HTTP server error", "error", err)
 		}
 	}()
 

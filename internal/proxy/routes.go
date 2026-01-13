@@ -238,14 +238,14 @@ func (r *Registry) Lookup(host string) *Route {
 
 	// 1. Try exact match first (highest priority)
 	if route, exists := r.routes[host]; exists {
-		copy := *route
-		return &copy
+		routeCopy := *route
+		return &routeCopy
 	}
 
 	// 2. Try wildcard match (most specific wins)
 	if route := r.findMostSpecificWildcard(host); route != nil {
-		copy := *route
-		return &copy
+		routeCopy := *route
+		return &routeCopy
 	}
 
 	return nil
@@ -292,8 +292,8 @@ func (r *Registry) GetByEntrypoint(entrypoint string) []*Route {
 	var result []*Route
 	for _, route := range r.routes {
 		if route.Protocol == ProtocolTCP && route.Entrypoint == entrypoint {
-			copy := *route
-			result = append(result, &copy)
+			routeCopy := *route
+			result = append(result, &routeCopy)
 		}
 	}
 	return result
@@ -354,11 +354,11 @@ func (r *Registry) SaveState() error {
 	}
 
 	stateFile := StateFile()
-	if err := os.MkdirAll(filepath.Dir(stateFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0o755); err != nil {
 		return err
 	}
 
-	return os.WriteFile(stateFile, data, 0644)
+	return os.WriteFile(stateFile, data, 0o644)
 }
 
 // LoadState reads routes from the state file (used by CLI to query daemon state).

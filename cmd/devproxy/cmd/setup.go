@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/munichmade/devproxy/internal/ca"
 	"github.com/munichmade/devproxy/internal/config"
 	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/resolver"
 	"github.com/munichmade/devproxy/internal/service"
-	"github.com/spf13/cobra"
 )
 
 var setupCmd = &cobra.Command{

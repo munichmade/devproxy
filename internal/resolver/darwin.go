@@ -60,7 +60,7 @@ func Setup(cfg Config) error {
 	}
 
 	// Ensure resolver directory exists
-	if err := os.MkdirAll(resolverDir, 0755); err != nil {
+	if err := os.MkdirAll(resolverDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create resolver directory: %w", err)
 	}
 
@@ -83,7 +83,7 @@ nameserver 127.0.0.1
 port %d
 `, domain, port)
 
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write resolver file for %s: %w", domain, err)
 	}
 

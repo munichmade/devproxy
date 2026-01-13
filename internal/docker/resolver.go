@@ -57,7 +57,8 @@ func (r *ContainerResolver) extractIP(settings *container.NetworkSettings) (stri
 		}
 	}
 
-	// Fall back to default network IP
+	// Fall back to default network IP (deprecated but kept for compatibility)
+	//nolint:staticcheck // IPAddress is deprecated but we use Networks first
 	if settings.IPAddress != "" {
 		return settings.IPAddress, nil
 	}

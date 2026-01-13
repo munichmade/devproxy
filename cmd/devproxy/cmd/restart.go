@@ -6,9 +6,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/munichmade/devproxy/internal/daemon"
 	"github.com/munichmade/devproxy/internal/privilege"
-	"github.com/spf13/cobra"
 )
 
 var restartCmd = &cobra.Command{

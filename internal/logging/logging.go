@@ -22,7 +22,7 @@ const (
 // levelVar holds the current log level and allows runtime updates.
 var (
 	currentLevel = &slog.LevelVar{}
-	currentFile  *os.File
+	currentFile  *os.File //nolint:unused // kept for future file rotation support
 	mu           sync.Mutex
 )
 
@@ -63,7 +63,7 @@ func SetupFile(level Level, path string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}

@@ -29,14 +29,14 @@ const (
 // Trust store paths for different distributions
 const (
 	// Debian/Ubuntu
-	debianCertDir    = "/usr/local/share/ca-certificates"
-	debianCertName   = "devproxy-ca.crt"
-	debianUpdateCmd  = "update-ca-certificates"
+	debianCertDir   = "/usr/local/share/ca-certificates"
+	debianCertName  = "devproxy-ca.crt"
+	debianUpdateCmd = "update-ca-certificates"
 
 	// RHEL/Fedora
-	rhelCertDir    = "/etc/pki/ca-trust/source/anchors"
-	rhelCertName   = "devproxy-ca.pem"
-	rhelUpdateCmd  = "update-ca-trust"
+	rhelCertDir   = "/etc/pki/ca-trust/source/anchors"
+	rhelCertName  = "devproxy-ca.pem"
+	rhelUpdateCmd = "update-ca-trust"
 
 	// Arch Linux
 	archTrustCmd = "trust"

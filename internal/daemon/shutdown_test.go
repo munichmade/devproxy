@@ -38,7 +38,7 @@ func TestShutdownHandler_Context(t *testing.T) {
 
 	select {
 	case <-ctx.Done():
-		t.Error("context should not be cancelled initially")
+		t.Error("context should not be canceled initially")
 	default:
 		// Expected
 	}
@@ -52,12 +52,12 @@ func TestShutdownHandler_Trigger(t *testing.T) {
 	// Trigger shutdown
 	h.Trigger()
 
-	// Context should be cancelled
+	// Context should be canceled
 	select {
 	case <-h.Done():
 		// Expected
 	case <-time.After(100 * time.Millisecond):
-		t.Error("context should be cancelled after Trigger()")
+		t.Error("context should be canceled after Trigger()")
 	}
 }
 
@@ -130,7 +130,7 @@ func TestShutdownHandler_SIGTERM(t *testing.T) {
 	case <-h.Done():
 		// Expected
 	case <-time.After(100 * time.Millisecond):
-		t.Error("context should be cancelled after SIGTERM")
+		t.Error("context should be canceled after SIGTERM")
 	}
 
 	if !called.Load() {
@@ -156,7 +156,7 @@ func TestShutdownHandler_SIGINT(t *testing.T) {
 	case <-h.Done():
 		// Expected
 	case <-time.After(100 * time.Millisecond):
-		t.Error("context should be cancelled after SIGINT")
+		t.Error("context should be canceled after SIGINT")
 	}
 
 	if !called.Load() {
@@ -180,10 +180,10 @@ func TestShutdownHandler_SIGHUP(t *testing.T) {
 		t.Error("should receive reload signal on SIGHUP")
 	}
 
-	// Context should NOT be cancelled
+	// Context should NOT be canceled
 	select {
 	case <-h.Done():
-		t.Error("context should not be cancelled on SIGHUP")
+		t.Error("context should not be canceled on SIGHUP")
 	default:
 		// Expected
 	}

@@ -63,7 +63,7 @@ func NewManager() (*Manager, error) {
 	}
 
 	// Ensure certs directory exists
-	if err := os.MkdirAll(paths.CertsDir(), 0700); err != nil {
+	if err := os.MkdirAll(paths.CertsDir(), 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create certs directory: %w", err)
 	}
 
@@ -272,11 +272,11 @@ func (m *Manager) saveToDisk(wildcardDomain string, certPEM, keyPEM []byte) erro
 	certPath := filepath.Join(paths.CertsDir(), filename+certFileSuffix)
 	keyPath := filepath.Join(paths.CertsDir(), filename+keyFileSuffix)
 
-	if err := os.WriteFile(certPath, certPEM, 0644); err != nil {
+	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
 		return fmt.Errorf("failed to write certificate: %w", err)
 	}
 
-	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
 		os.Remove(certPath) // Clean up
 		return fmt.Errorf("failed to write private key: %w", err)
 	}

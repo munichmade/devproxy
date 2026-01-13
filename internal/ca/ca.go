@@ -59,7 +59,7 @@ func Exists() bool {
 // It saves the files to the CA directory with appropriate permissions.
 func Generate() (*CA, error) {
 	// Ensure CA directory exists
-	if err := os.MkdirAll(paths.CADir(), 0700); err != nil {
+	if err := os.MkdirAll(paths.CADir(), 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create CA directory: %w", err)
 	}
 
@@ -122,13 +122,13 @@ func Generate() (*CA, error) {
 
 	// Save certificate (world-readable)
 	certPath := filepath.Join(paths.CADir(), CACertFilename)
-	if err := os.WriteFile(certPath, certPEM, 0644); err != nil {
+	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write certificate: %w", err)
 	}
 
 	// Save private key (owner-only)
 	keyPath := filepath.Join(paths.CADir(), CAKeyFilename)
-	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
 		// Clean up certificate if key write fails
 		os.Remove(certPath)
 		return nil, fmt.Errorf("failed to write private key: %w", err)

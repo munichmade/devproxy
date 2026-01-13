@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/munichmade/devproxy/internal/ca"
 	"github.com/munichmade/devproxy/internal/cert"
 	"github.com/munichmade/devproxy/internal/config"
@@ -19,7 +21,6 @@ import (
 	"github.com/munichmade/devproxy/internal/paths"
 	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/proxy"
-	"github.com/spf13/cobra"
 )
 
 // chownRecursive changes ownership of a directory and all its contents
@@ -163,7 +164,7 @@ func runDaemon() error {
 
 	// Ensure log directory exists
 	logFile := paths.LogFile()
-	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logFile), 0o755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 

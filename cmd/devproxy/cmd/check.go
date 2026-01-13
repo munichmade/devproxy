@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/docker/docker/client"
+	"github.com/spf13/cobra"
+
 	"github.com/munichmade/devproxy/internal/ca"
 	"github.com/munichmade/devproxy/internal/paths"
-	"github.com/spf13/cobra"
 )
 
 // CheckResult represents the result of a single check.
@@ -47,7 +48,6 @@ func init() {
 func runCheck(cmd *cobra.Command, args []string) {
 	fmt.Println("\nChecking system configuration...")
 
-	var results []CheckResult
 	var failures int
 
 	// Run all checks
@@ -64,7 +64,6 @@ func runCheck(cmd *cobra.Command, args []string) {
 
 	for _, check := range checks {
 		result := check()
-		results = append(results, result)
 		printResult(result)
 		if !result.Passed {
 			failures++
