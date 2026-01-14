@@ -1,0 +1,114 @@
+name: Nightly Release
+
+on:
+  schedule:
+    # Run every day at 2:00 AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force release even if no new commits"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  check-changes:
+    name: Check for changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      short_sha: ${{ steps.check.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new commits since last nightly
+        id: check
+        run: |
+          # Get the latest nightly tag
+          LAST_NIGHTLY=$(git tag -l 'v*-nightly.*' --sort=-version:refname | head -n1)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          
+          # Check if force flag is set
+          if [ "${{ inputs.force }}" == "true" ]; then
+            echo "Force flag set, will create release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          elif [ -z "$LAST_NIGHTLY" ]; then
+            echo "No previous nightly found, will create first one"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            # Check if there are commits since last nightly
+            COMMITS_SINCE=$(git rev-list ${LAST_NIGHTLY}..HEAD --count)
+            if [ "$COMMITS_SINCE" -gt 0 ]; then
+              echo "Found $COMMITS_SINCE new commits since $LAST_NIGHTLY"
+              echo "should_release=true" >> $GITHUB_OUTPUT
+            else
+              echo "No new commits since $LAST_NIGHTLY"
+              echo "should_release=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+          
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+  nightly:
+    name: Nightly Release
+    runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Create nightly tag
+        id: tag
+        run: |
+          # Get base version from latest stable tag, or use 0.1.0
+          LATEST_STABLE=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | grep -v '-' | head -n1)
+          if [ -z "$LATEST_STABLE" ]; then
+            BASE_VERSION="0.1.0"
+          else
+            BASE_VERSION="${LATEST_STABLE#v}"
+          fi
+          
+          DATE=$(date -u +%Y%m%d)
+          SHORT_SHA=${{ needs.check-changes.outputs.short_sha }}
+          NIGHTLY_TAG="v${BASE_VERSION}-nightly.${DATE}.${SHORT_SHA}"
+          
+          echo "Creating tag: $NIGHTLY_TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NIGHTLY_TAG" -m "Nightly release $NIGHTLY_TAG"
+          git push origin "$NIGHTLY_TAG"
+          
+          echo "tag=$NIGHTLY_TAG" >> $GITHUB_OUTPUT
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Don't update Homebrew for nightly releases
+          # HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Cleanup old nightly releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Keep only the last 5 nightly releases
+          NIGHTLY_TAGS=$(git tag -l 'v*-nightly.*' --sort=-version:refname | tail -n +6)
+          for tag in $NIGHTLY_TAGS; do
+            echo "Deleting old nightly: $tag"
+            gh release delete "$tag" --yes --cleanup-tag || true
+          done
