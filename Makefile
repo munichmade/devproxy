@@ -1,10 +1,10 @@
-.PHONY: build build-all clean test test-coverage lint fmt install uninstall release help
+.PHONY: build build-all clean test test-coverage lint fmt install uninstall release release-snapshot help
 
 # Version and build info
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
+LDFLAGS := -ldflags "-X github.com/munichmade/devproxy/cmd/devproxy/cmd.Version=$(VERSION) -X github.com/munichmade/devproxy/cmd/devproxy/cmd.Commit=$(COMMIT) -X github.com/munichmade/devproxy/cmd/devproxy/cmd.BuildDate=$(BUILD_DATE)"
 
 # Binary info
 BINARY := devproxy
@@ -64,7 +64,7 @@ lint:
 ## fmt: Format code
 fmt:
 	go fmt ./...
-	@which goimports > /dev/null && goimports -w . || true
+	@which goimports > /dev/null && goimports -local github.com/munichmade/devproxy -w . || true
 
 ## install: Build and install to /usr/local/bin
 install: build
@@ -104,3 +104,8 @@ run: build
 dev:
 	@which entr > /dev/null || (echo "Please install entr: brew install entr" && exit 1)
 	find . -name '*.go' | entr -r make run
+
+## release-snapshot: Test release locally without publishing (uses goreleaser)
+release-snapshot:
+	@which goreleaser > /dev/null || (echo "Installing goreleaser..." && go install github.com/goreleaser/goreleaser/v2@latest)
+	goreleaser release --snapshot --clean

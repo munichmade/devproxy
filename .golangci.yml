@@ -1,0 +1,37 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/munichmade/devproxy
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    # Ignore unchecked errors in test files (common pattern for defer cleanup)
+    - path: _test\.go
+      linters:
+        - errcheck
+
+    # Ignore errcheck for common cleanup patterns (deadline/close operations)
+    - linters:
+        - errcheck
+      text: "SetReadDeadline|SetWriteDeadline|CloseWrite"
+
+  max-issues-per-linter: 50
+  max-same-issues: 10
