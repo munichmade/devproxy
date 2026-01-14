@@ -56,7 +56,7 @@ func (d *Daemon) Start() error {
 	}
 
 	// Ensure PID file directory exists
-	if err := os.MkdirAll(filepath.Dir(d.pidFile), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(d.pidFile), 0o700); err != nil {
 		return fmt.Errorf("failed to create PID directory: %w", err)
 	}
 
@@ -97,7 +97,7 @@ func (d *Daemon) Start() error {
 
 	// Verify the process is still running
 	if !isProcessRunning(pid) {
-		d.removePIDFile()
+		_ = d.removePIDFile()
 		return fmt.Errorf("daemon process exited immediately - check logs at %s", paths.LogFile())
 	}
 
@@ -115,7 +115,7 @@ func (d *Daemon) Stop() error {
 	// Check if process exists
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		d.removePIDFile()
+		_ = d.removePIDFile()
 		return ErrNotRunning
 	}
 
@@ -123,7 +123,7 @@ func (d *Daemon) Stop() error {
 	if err := process.Signal(syscall.SIGTERM); err != nil {
 		// Process might already be dead
 		if errors.Is(err, os.ErrProcessDone) {
-			d.removePIDFile()
+			_ = d.removePIDFile()
 			return ErrNotRunning
 		}
 		return fmt.Errorf("failed to send SIGTERM: %w", err)
@@ -142,11 +142,11 @@ func (d *Daemon) Stop() error {
 				// Wait a bit more for SIGKILL to take effect
 				time.Sleep(500 * time.Millisecond)
 			}
-			d.removePIDFile()
+			_ = d.removePIDFile()
 			return nil
 		case <-ticker.C:
 			if !isProcessRunning(pid) {
-				d.removePIDFile()
+				_ = d.removePIDFile()
 				return nil
 			}
 		}
@@ -163,13 +163,13 @@ func (d *Daemon) Reload() error {
 
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		d.removePIDFile()
+		_ = d.removePIDFile()
 		return ErrNotRunning
 	}
 
 	if err := process.Signal(syscall.SIGHUP); err != nil {
 		if errors.Is(err, os.ErrProcessDone) {
-			d.removePIDFile()
+			_ = d.removePIDFile()
 			return ErrNotRunning
 		}
 		return fmt.Errorf("failed to send SIGHUP: %w", err)
@@ -221,7 +221,7 @@ func (d *Daemon) PIDFile() string {
 
 // writePIDFile writes a PID to the PID file.
 func (d *Daemon) writePIDFile(pid int) error {
-	return os.WriteFile(d.pidFile, []byte(strconv.Itoa(pid)), 0644)
+	return os.WriteFile(d.pidFile, []byte(strconv.Itoa(pid)), 0o644)
 }
 
 // removePIDFile removes the PID file.

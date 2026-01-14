@@ -32,12 +32,12 @@ func install(cfg Config) error {
 	plist := generatePlist(cfg.BinaryPath)
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(plistDir, 0755); err != nil {
+	if err := os.MkdirAll(plistDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create %s: %w", plistDir, err)
 	}
 
 	// Write the plist file
-	if err := os.WriteFile(plistPath(), []byte(plist), 0644); err != nil {
+	if err := os.WriteFile(plistPath(), []byte(plist), 0o644); err != nil {
 		return fmt.Errorf("failed to write plist: %w", err)
 	}
 

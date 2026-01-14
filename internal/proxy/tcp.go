@@ -320,7 +320,7 @@ func (e *TCPEntrypoint) peekConnectionType(conn net.Conn) ([]byte, bool, error) 
 			// Now the client will send a TLS ClientHello, peek again
 			tlsBuf := make([]byte, 1)
 			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			n, err = conn.Read(tlsBuf)
+			_, err = conn.Read(tlsBuf)
 			conn.SetReadDeadline(time.Time{})
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to read TLS handshake after SSLRequest: %w", err)

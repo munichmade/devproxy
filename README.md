@@ -428,6 +428,36 @@ make test
 make test-race
 ```
 
+## Releasing
+
+Releases are automated via GitHub Actions and GoReleaser.
+
+### Creating a Release
+
+1. Update `CHANGELOG.md` with the new version
+2. Commit the changes: `git commit -am "chore: prepare release vX.Y.Z"`
+3. Create and push a tag:
+   ```bash
+   git tag vX.Y.Z
+   git push origin main --tags
+   ```
+
+The release workflow will automatically:
+- Build binaries for all platforms (darwin/linux × amd64/arm64)
+- Create a GitHub Release with archives and checksums
+- Update the Homebrew formula in `munichmade/homebrew-tap`
+
+### Homebrew Tap Setup
+
+The Homebrew tap is hosted at [github.com/munichmade/homebrew-tap](https://github.com/munichmade/homebrew-tap).
+
+To set up the tap repository:
+
+1. Create a new repository named `homebrew-tap` under the `munichmade` organization
+2. Add a `Formula/` directory (GoReleaser will create the formula automatically)
+3. Create a Personal Access Token (PAT) with `repo` scope
+4. Add the PAT as a repository secret named `HOMEBREW_TAP_TOKEN` in this repository
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

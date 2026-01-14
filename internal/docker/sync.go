@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/api/types/container"
+
 	"github.com/munichmade/devproxy/internal/proxy"
 )
 
@@ -249,7 +250,8 @@ func (s *RouteSync) resolveContainerIP(ctx context.Context, containerID string) 
 		}
 	}
 
-	// Fall back to default network IP
+	// Fall back to default network IP (deprecated but kept for compatibility)
+	//nolint:staticcheck // IPAddress is deprecated but we use Networks first
 	if info.NetworkSettings.IPAddress != "" {
 		return info.NetworkSettings.IPAddress, nil
 	}

@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/munichmade/devproxy/internal/paths"
 	"gopkg.in/yaml.v3"
+
+	"github.com/munichmade/devproxy/internal/paths"
 )
 
 // Config represents the complete devproxy configuration.
@@ -130,7 +131,7 @@ func (c *Config) Save() error {
 func (c *Config) SaveToFile(path string) error {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -141,7 +142,7 @@ func (c *Config) SaveToFile(path string) error {
 	}
 
 	// Write file
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

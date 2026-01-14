@@ -6,10 +6,11 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/spf13/cobra"
+
 	"github.com/munichmade/devproxy/internal/config"
 	"github.com/munichmade/devproxy/internal/daemon"
 	"github.com/munichmade/devproxy/internal/proxy"
-	"github.com/spf13/cobra"
 )
 
 var statusJSONOutput bool
@@ -175,7 +176,7 @@ func outputStatusText(status Status) {
 func outputStatusJSON(status Status) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(status)
+	_ = enc.Encode(status)
 }
 
 func init() {

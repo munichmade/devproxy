@@ -65,7 +65,7 @@ func (h *ShutdownHandler) Stop() {
 	<-h.done
 }
 
-// Context returns a context that is cancelled when shutdown is triggered.
+// Context returns a context that is canceled when shutdown is triggered.
 func (h *ShutdownHandler) Context() context.Context {
 	return h.ctx
 }
