@@ -44,9 +44,18 @@ release:
   prerelease: auto
   mode: replace
   header: |
+    {{- if .IsNightly }}
+    ## Nightly Build
+    
+    This is an automated nightly build from the latest `main` branch.
+    **Not recommended for production use.**
+    
+    Commit: {{ .ShortCommit }}
+    {{- else }}
     ## What's Changed
 
     See [CHANGELOG.md](https://github.com/munichmade/devproxy/blob/main/CHANGELOG.md) for details.
+    {{- end }}
 
 homebrew_casks:
   - name: devproxy

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MIT license
 - Wildcard domain routing support (e.g., `*.app.localhost`) for dynamic subdomains
 - Initial release of DevProxy
 - Certificate Authority (CA) management with automatic trust store integration
