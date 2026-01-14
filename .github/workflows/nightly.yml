@@ -96,11 +96,9 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean
+          args: release --clean --skip=homebrew_casks
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Don't update Homebrew for nightly releases
-          # HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Cleanup old nightly releases
         env:
