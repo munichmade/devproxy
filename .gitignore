@@ -1,6 +1,5 @@
 # Build output
 bin/
-devproxy
 dist/
 
 # IDE

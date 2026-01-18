@@ -129,6 +129,10 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 		containerName = resolvedName
 	}
 
+	// Extract Docker Compose project info from labels
+	projectName := event.Labels["com.docker.compose.project"]
+	projectDir := event.Labels["com.docker.compose.project.working_dir"]
+
 	// Register routes for each service
 	var hosts []string
 	s.logger.Debug("registering routes", "container", event.ContainerName, "count", len(configs))
@@ -151,6 +155,8 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 				Entrypoint:    config.Entrypoint,
 				ContainerID:   event.ContainerID,
 				ContainerName: containerName,
+				ProjectName:   projectName,
+				ProjectDir:    projectDir,
 			}
 
 			if err := s.registry.Add(route); err != nil {

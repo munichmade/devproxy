@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -37,11 +39,11 @@ var statusCmd = &cobra.Command{
 
 // Status represents the current state of devproxy.
 type Status struct {
-	Running     bool          `json:"running"`
-	PID         int           `json:"pid,omitempty"`
-	Uptime      string        `json:"uptime,omitempty"`
-	Entrypoints []Entrypoint  `json:"entrypoints"`
-	Routes      []RouteStatus `json:"routes"`
+	Running     bool                      `json:"running"`
+	PID         int                       `json:"pid,omitempty"`
+	Uptime      string                    `json:"uptime,omitempty"`
+	Entrypoints []Entrypoint              `json:"entrypoints"`
+	Projects    map[string]*ProjectRoutes `json:"projects"`
 }
 
 // Entrypoint represents a listening endpoint.
@@ -50,6 +52,12 @@ type Entrypoint struct {
 	Listen   string `json:"listen"`
 	Protocol string `json:"protocol"`
 	Status   string `json:"status"`
+}
+
+// ProjectRoutes represents routes grouped by project.
+type ProjectRoutes struct {
+	ProjectDir string        `json:"project_dir,omitempty"`
+	Routes     []RouteStatus `json:"routes"`
 }
 
 // RouteStatus represents a proxied route.
@@ -67,7 +75,7 @@ func getStatus() Status {
 	status := Status{
 		Running:     d.IsRunning(),
 		Entrypoints: []Entrypoint{},
-		Routes:      []RouteStatus{},
+		Projects:    make(map[string]*ProjectRoutes),
 	}
 
 	if status.Running {
@@ -108,12 +116,26 @@ func getStatus() Status {
 		}
 	}
 
-	// Load routes from state file (written by daemon)
+	// Load routes from state file (written by daemon) and group by project
 	if status.Running {
 		routes, err := proxy.LoadState()
 		if err == nil && len(routes) > 0 {
 			for _, route := range routes {
-				status.Routes = append(status.Routes, RouteStatus{
+				projectName := route.ProjectName
+				if projectName == "" {
+					projectName = "ungrouped"
+				}
+
+				project, exists := status.Projects[projectName]
+				if !exists {
+					project = &ProjectRoutes{
+						ProjectDir: shortenPath(route.ProjectDir),
+						Routes:     []RouteStatus{},
+					}
+					status.Projects[projectName] = project
+				}
+
+				project.Routes = append(project.Routes, RouteStatus{
 					Host:          route.Host,
 					Backend:       route.Backend,
 					ContainerName: route.ContainerName,
@@ -132,6 +154,21 @@ func getListenerStatus(running bool) string {
 		return "listening"
 	}
 	return "stopped"
+}
+
+// shortenPath replaces the user's home directory with ~
+func shortenPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if strings.HasPrefix(path, home) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }
 
 func outputStatusText(status Status) {
@@ -155,21 +192,50 @@ func outputStatusText(status Status) {
 
 	fmt.Println()
 
-	// Routes
-	if len(status.Routes) == 0 {
+	// Routes grouped by project
+	if len(status.Projects) == 0 {
 		fmt.Println("Routes: none")
 	} else {
 		fmt.Println("Routes:")
-		w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "  HOST\tBACKEND\tCONTAINER\n")
-		for _, route := range status.Routes {
-			container := route.ContainerName
-			if container == "" {
-				container = "-"
-			}
-			fmt.Fprintf(w, "  %s\t%s\t%s\n", route.Host, route.Backend, container)
+
+		// Sort project names for consistent output, with "ungrouped" last
+		projectNames := make([]string, 0, len(status.Projects))
+		for name := range status.Projects {
+			projectNames = append(projectNames, name)
 		}
-		w.Flush()
+		sort.Slice(projectNames, func(i, j int) bool {
+			// "ungrouped" always goes last
+			if projectNames[i] == "ungrouped" {
+				return false
+			}
+			if projectNames[j] == "ungrouped" {
+				return true
+			}
+			return projectNames[i] < projectNames[j]
+		})
+
+		for _, projectName := range projectNames {
+			project := status.Projects[projectName]
+
+			// Project header
+			if project.ProjectDir != "" {
+				fmt.Printf("\n  %s (%s)\n", projectName, project.ProjectDir)
+			} else {
+				fmt.Printf("\n  %s\n", projectName)
+			}
+
+			// Routes table
+			w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintf(w, "    HOST\tBACKEND\tCONTAINER\n")
+			for _, route := range project.Routes {
+				container := route.ContainerName
+				if container == "" {
+					container = "-"
+				}
+				fmt.Fprintf(w, "    %s\t%s\t%s\n", route.Host, route.Backend, container)
+			}
+			w.Flush()
+		}
 	}
 }
 
