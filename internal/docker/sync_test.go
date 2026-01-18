@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
 
 	"github.com/munichmade/devproxy/internal/proxy"
 )
@@ -507,171 +506,6 @@ func TestRouteSync_handleStart_CertGeneration(t *testing.T) {
 	})
 }
 
-func TestRouteSync_resolveContainerIP(t *testing.T) {
-	t.Run("uses preferred network when available", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		mockAPI := newMockBuilder().
-			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-				return container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{
-						ID:   containerID,
-						Name: "/test",
-					},
-					NetworkSettings: &container.NetworkSettings{
-						Networks: map[string]*network.EndpointSettings{
-							"bridge":     {IPAddress: "172.17.0.2"},
-							"my-network": {IPAddress: "10.0.0.5"},
-						},
-					},
-				}, nil
-			}).
-			build()
-
-		client := NewClientWithAPI(mockAPI, logger)
-		sync := NewRouteSync(registry, client, "my-network", logger)
-
-		ip, err := sync.resolveContainerIP(context.Background(), "container123")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if ip != "10.0.0.5" {
-			t.Errorf("expected IP '10.0.0.5' from preferred network, got '%s'", ip)
-		}
-	})
-
-	t.Run("falls back to first available network", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		mockAPI := newMockBuilder().
-			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-				return container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{
-						ID:   containerID,
-						Name: "/test",
-					},
-					NetworkSettings: &container.NetworkSettings{
-						Networks: map[string]*network.EndpointSettings{
-							"bridge": {IPAddress: "172.17.0.2"},
-						},
-					},
-				}, nil
-			}).
-			build()
-
-		client := NewClientWithAPI(mockAPI, logger)
-		sync := NewRouteSync(registry, client, "nonexistent", logger)
-
-		ip, err := sync.resolveContainerIP(context.Background(), "container123")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if ip != "172.17.0.2" {
-			t.Errorf("expected IP '172.17.0.2' from fallback network, got '%s'", ip)
-		}
-	})
-
-	t.Run("returns error when no IP found", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		mockAPI := newMockBuilder().
-			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-				return container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{
-						ID:   containerID,
-						Name: "/test",
-					},
-					NetworkSettings: &container.NetworkSettings{
-						Networks: map[string]*network.EndpointSettings{},
-					},
-				}, nil
-			}).
-			build()
-
-		client := NewClientWithAPI(mockAPI, logger)
-		sync := NewRouteSync(registry, client, "bridge", logger)
-
-		_, err := sync.resolveContainerIP(context.Background(), "container123")
-		if err == nil {
-			t.Error("expected error when no IP found")
-		}
-	})
-
-	t.Run("returns error when client not connected", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		client := &Client{} // No API set
-		sync := NewRouteSync(registry, client, "bridge", logger)
-
-		_, err := sync.resolveContainerIP(context.Background(), "container123")
-		if err == nil {
-			t.Error("expected error when client not connected")
-		}
-	})
-}
-
-func TestRouteSync_getContainerName(t *testing.T) {
-	t.Run("returns truncated ID when client not connected", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		client := &Client{} // No API set
-		sync := NewRouteSync(registry, client, "bridge", logger)
-
-		name := sync.getContainerName(context.Background(), "abcdef123456789")
-		if name != "abcdef123456" {
-			t.Errorf("expected truncated ID 'abcdef123456', got '%s'", name)
-		}
-	})
-
-	t.Run("strips leading slash from name", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		mockAPI := newMockBuilder().
-			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-				return container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{
-						ID:   containerID,
-						Name: "/my-container",
-					},
-				}, nil
-			}).
-			build()
-
-		client := NewClientWithAPI(mockAPI, logger)
-		sync := NewRouteSync(registry, client, "bridge", logger)
-
-		name := sync.getContainerName(context.Background(), "container123")
-		if name != "my-container" {
-			t.Errorf("expected 'my-container', got '%s'", name)
-		}
-	})
-
-	t.Run("returns truncated ID on inspect error", func(t *testing.T) {
-		registry := proxy.NewRegistry()
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		mockAPI := newMockBuilder().
-			withContainerInspectError(errMockNotFound).
-			build()
-
-		client := NewClientWithAPI(mockAPI, logger)
-		sync := NewRouteSync(registry, client, "bridge", logger)
-
-		name := sync.getContainerName(context.Background(), "abcdef123456789")
-		if name != "abcdef123456" {
-			t.Errorf("expected truncated ID 'abcdef123456', got '%s'", name)
-		}
-	})
-}
-
 func TestRouteSync_SyncExisting(t *testing.T) {
 	t.Run("lists containers and creates start events", func(t *testing.T) {
 		registry := proxy.NewRegistry()
@@ -709,11 +543,11 @@ func TestRouteSync_SyncExisting(t *testing.T) {
 			t.Fatalf("SyncExisting failed: %v", err)
 		}
 
-		// Both containers should have been inspected (2 calls per container: IP + name)
+		// Both containers should have been inspected (1 call per container via ResolveInfo)
 		mu.Lock()
 		defer mu.Unlock()
-		if len(inspectCalls) != 4 {
-			t.Errorf("expected 4 inspect calls (2 per container), got %d", len(inspectCalls))
+		if len(inspectCalls) != 2 {
+			t.Errorf("expected 2 inspect calls (1 per container), got %d", len(inspectCalls))
 		}
 
 		// Both routes should exist

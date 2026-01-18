@@ -28,6 +28,7 @@ type RouteSync struct {
 	registry    *proxy.Registry
 	parser      *LabelParser
 	client      *Client
+	resolver    *ContainerResolver
 	certManager CertManager
 	network     string
 	logger      *slog.Logger
@@ -42,6 +43,7 @@ func NewRouteSync(registry *proxy.Registry, client *Client, network string, logg
 		registry:   registry,
 		parser:     NewLabelParser(),
 		client:     client,
+		resolver:   NewContainerResolver(client, network),
 		network:    network,
 		logger:     logger,
 		containers: make(map[string][]string),
@@ -110,8 +112,8 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 
 	s.logger.Debug("resolving container IP", "container", event.ContainerName, "id", containerIDShort)
 
-	// Resolve container IP
-	ip, err := s.resolveContainerIP(ctx, event.ContainerID)
+	// Resolve container IP and name in a single call
+	ip, resolvedName, err := s.resolver.ResolveInfo(ctx, event.ContainerID)
 
 	s.logger.Debug("resolved container IP", "container", event.ContainerName, "ip", ip, "error", err)
 	if err != nil {
@@ -121,10 +123,10 @@ func (s *RouteSync) handleStart(event ContainerEvent) {
 		return
 	}
 
-	// Use container name from event or resolve it
+	// Use container name from event, or the resolved name
 	containerName := event.ContainerName
 	if containerName == "" {
-		containerName = s.getContainerName(ctx, event.ContainerID)
+		containerName = resolvedName
 	}
 
 	// Register routes for each service
@@ -223,59 +225,6 @@ func (s *RouteSync) handleStop(event ContainerEvent) {
 			"host", host,
 			"container", event.ContainerID[:12])
 	}
-}
-
-// resolveContainerIP gets the IP address of a container.
-func (s *RouteSync) resolveContainerIP(ctx context.Context, containerID string) (string, error) {
-	if s.client.API() == nil {
-		return "", fmt.Errorf("docker client not connected")
-	}
-
-	info, err := s.client.API().ContainerInspect(ctx, containerID)
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect container: %w", err)
-	}
-
-	// Try the specified network first
-	if s.network != "" {
-		if network, ok := info.NetworkSettings.Networks[s.network]; ok && network.IPAddress != "" {
-			return network.IPAddress, nil
-		}
-	}
-
-	// Fall back to first available network
-	for _, network := range info.NetworkSettings.Networks {
-		if network.IPAddress != "" {
-			return network.IPAddress, nil
-		}
-	}
-
-	// Fall back to default network IP (deprecated but kept for compatibility)
-	//nolint:staticcheck // IPAddress is deprecated but we use Networks first
-	if info.NetworkSettings.IPAddress != "" {
-		return info.NetworkSettings.IPAddress, nil
-	}
-
-	return "", fmt.Errorf("no IP address found for container")
-}
-
-// getContainerName gets the display name of a container.
-func (s *RouteSync) getContainerName(ctx context.Context, containerID string) string {
-	if s.client.API() == nil {
-		return containerID[:12]
-	}
-
-	info, err := s.client.API().ContainerInspect(ctx, containerID)
-	if err != nil {
-		return containerID[:12]
-	}
-
-	// Remove leading slash from container name
-	name := info.Name
-	if len(name) > 0 && name[0] == '/' {
-		name = name[1:]
-	}
-	return name
 }
 
 // getProtocol determines the protocol based on service config.
