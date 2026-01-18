@@ -15,7 +15,7 @@ import (
 
 // Client wraps the Docker API client with connection management.
 type Client struct {
-	cli    *client.Client
+	api    DockerAPI
 	logger *slog.Logger
 
 	mu        sync.RWMutex
@@ -34,7 +34,7 @@ func NewClient(logger *slog.Logger) (*Client, error) {
 	}
 
 	return &Client{
-		cli:    cli,
+		api:    cli,
 		logger: logger,
 	}, nil
 }
@@ -50,9 +50,18 @@ func NewClientWithHost(host string, logger *slog.Logger) (*Client, error) {
 	}
 
 	return &Client{
-		cli:    cli,
+		api:    cli,
 		logger: logger,
 	}, nil
+}
+
+// NewClientWithAPI creates a Docker client with a custom DockerAPI implementation.
+// This is primarily useful for testing.
+func NewClientWithAPI(api DockerAPI, logger *slog.Logger) *Client {
+	return &Client{
+		api:    api,
+		logger: logger,
+	}
 }
 
 // Connect verifies the connection to Docker daemon.
@@ -61,7 +70,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	defer c.mu.Unlock()
 
 	// Ping Docker daemon to verify connection
-	_, err := c.cli.Ping(ctx)
+	_, err := c.api.Ping(ctx)
 	if err != nil {
 		c.connected = false
 		return fmt.Errorf("failed to connect to Docker daemon: %w", err)
@@ -85,15 +94,15 @@ func (c *Client) Close() error {
 	defer c.mu.Unlock()
 
 	c.connected = false
-	if c.cli != nil {
-		return c.cli.Close()
+	if c.api != nil {
+		return c.api.Close()
 	}
 	return nil
 }
 
 // Ping checks if the Docker daemon is responsive.
 func (c *Client) Ping(ctx context.Context) error {
-	_, err := c.cli.Ping(ctx)
+	_, err := c.api.Ping(ctx)
 	if err != nil {
 		c.mu.Lock()
 		c.connected = false
@@ -105,7 +114,7 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // ListContainers returns all running containers.
 func (c *Client) ListContainers(ctx context.Context) ([]container.Summary, error) {
-	return c.cli.ContainerList(ctx, container.ListOptions{
+	return c.api.ContainerList(ctx, container.ListOptions{
 		All: false, // Only running containers
 	})
 }
@@ -117,7 +126,7 @@ func (c *Client) ListContainersWithLabel(ctx context.Context, labelPrefix string
 	// Filter for containers that have any label starting with prefix
 	// Docker's filter doesn't support prefix matching, so we filter all and check labels ourselves
 
-	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{
 		All:     false,
 		Filters: filterArgs,
 	})
@@ -141,12 +150,12 @@ func (c *Client) ListContainersWithLabel(ctx context.Context, labelPrefix string
 
 // InspectContainer returns detailed information about a container.
 func (c *Client) InspectContainer(ctx context.Context, containerID string) (container.InspectResponse, error) {
-	return c.cli.ContainerInspect(ctx, containerID)
+	return c.api.ContainerInspect(ctx, containerID)
 }
 
-// APIClient returns the underlying Docker API client for advanced operations.
-func (c *Client) APIClient() *client.Client {
-	return c.cli
+// API returns the underlying DockerAPI for advanced operations.
+func (c *Client) API() DockerAPI {
+	return c.api
 }
 
 // WaitForConnection attempts to connect to Docker with retries.

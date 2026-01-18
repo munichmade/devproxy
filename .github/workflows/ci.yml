@@ -43,6 +43,22 @@ jobs:
       - name: Show coverage
         run: go tool cover -func=coverage.out
 
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Pull test image
+        run: docker pull alpine:latest
+
+      - name: Run integration tests
+        run: go test -v -race -tags=integration ./internal/docker/...
+
   build:
     name: Build
     runs-on: ubuntu-latest

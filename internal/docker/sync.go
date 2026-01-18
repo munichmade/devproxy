@@ -227,11 +227,11 @@ func (s *RouteSync) handleStop(event ContainerEvent) {
 
 // resolveContainerIP gets the IP address of a container.
 func (s *RouteSync) resolveContainerIP(ctx context.Context, containerID string) (string, error) {
-	if s.client.APIClient() == nil {
+	if s.client.API() == nil {
 		return "", fmt.Errorf("docker client not connected")
 	}
 
-	info, err := s.client.APIClient().ContainerInspect(ctx, containerID)
+	info, err := s.client.API().ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
@@ -261,11 +261,11 @@ func (s *RouteSync) resolveContainerIP(ctx context.Context, containerID string) 
 
 // getContainerName gets the display name of a container.
 func (s *RouteSync) getContainerName(ctx context.Context, containerID string) string {
-	if s.client.APIClient() == nil {
+	if s.client.API() == nil {
 		return containerID[:12]
 	}
 
-	info, err := s.client.APIClient().ContainerInspect(ctx, containerID)
+	info, err := s.client.API().ContainerInspect(ctx, containerID)
 	if err != nil {
 		return containerID[:12]
 	}
@@ -302,11 +302,11 @@ func (s *RouteSync) ListContainers() map[string][]string {
 
 // SyncExisting scans for existing containers and adds their routes.
 func (s *RouteSync) SyncExisting(ctx context.Context) error {
-	if s.client.APIClient() == nil {
+	if s.client.API() == nil {
 		return fmt.Errorf("docker client not connected")
 	}
 
-	containers, err := s.client.APIClient().ContainerList(ctx, container.ListOptions{})
+	containers, err := s.client.API().ContainerList(ctx, container.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}

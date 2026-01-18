@@ -25,11 +25,11 @@ func NewContainerResolver(client *Client, network string) *ContainerResolver {
 // ResolveIP gets the IP address of a container.
 // It tries the preferred network first, then falls back to any available network.
 func (r *ContainerResolver) ResolveIP(ctx context.Context, containerID string) (string, error) {
-	if r.client.APIClient() == nil {
+	if r.client.API() == nil {
 		return "", fmt.Errorf("docker client not connected")
 	}
 
-	info, err := r.client.APIClient().ContainerInspect(ctx, containerID)
+	info, err := r.client.API().ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
@@ -68,11 +68,11 @@ func (r *ContainerResolver) extractIP(settings *container.NetworkSettings) (stri
 
 // ResolveName gets the display name of a container.
 func (r *ContainerResolver) ResolveName(ctx context.Context, containerID string) (string, error) {
-	if r.client.APIClient() == nil {
+	if r.client.API() == nil {
 		return "", fmt.Errorf("docker client not connected")
 	}
 
-	info, err := r.client.APIClient().ContainerInspect(ctx, containerID)
+	info, err := r.client.API().ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
@@ -91,11 +91,11 @@ func (r *ContainerResolver) extractName(name string) string {
 
 // ResolveInfo gets both IP and name for a container in a single call.
 func (r *ContainerResolver) ResolveInfo(ctx context.Context, containerID string) (ip, name string, err error) {
-	if r.client.APIClient() == nil {
+	if r.client.API() == nil {
 		return "", "", fmt.Errorf("docker client not connected")
 	}
 
-	info, err := r.client.APIClient().ContainerInspect(ctx, containerID)
+	info, err := r.client.API().ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to inspect container: %w", err)
 	}

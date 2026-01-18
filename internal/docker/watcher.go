@@ -65,7 +65,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 	w.mu.Unlock()
 
 	// Check if client is connected
-	if w.client.APIClient() == nil {
+	if w.client.API() == nil {
 		w.logger.Warn("docker client not connected, skipping container scan")
 	} else {
 		// Scan existing containers first
@@ -107,7 +107,7 @@ func (w *Watcher) scanExistingContainers(ctx context.Context) error {
 		),
 	}
 
-	containers, err := w.client.APIClient().ContainerList(ctx, opts)
+	containers, err := w.client.API().ContainerList(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (w *Watcher) watchEventStream(ctx context.Context) {
 		),
 	}
 
-	eventCh, errCh := w.client.APIClient().Events(ctx, opts)
+	eventCh, errCh := w.client.API().Events(ctx, opts)
 
 	for {
 		select {
