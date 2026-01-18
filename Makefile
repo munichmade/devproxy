@@ -9,7 +9,7 @@ LDFLAGS := -ldflags "-X github.com/munichmade/devproxy/cmd/devproxy/cmd.Version=
 # Binary info
 BINARY := devproxy
 BUILD_DIR := bin
-INSTALL_DIR := /usr/local/bin
+INSTALL_DIR := /opt/homebrew/bin
 
 # Platforms for cross-compilation
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
@@ -69,7 +69,7 @@ fmt:
 ## install: Build and install to /usr/local/bin
 install: build
 	@echo "Installing $(BINARY) to $(INSTALL_DIR)..."
-	@sudo rm $(INSTALL_DIR)/$(BINARY)
+	@sudo rm $(INSTALL_DIR)/$(BINARY) || echo "No install yet"
 	@sudo cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@sudo chmod +x $(INSTALL_DIR)/$(BINARY)
 	@echo "Installed successfully"

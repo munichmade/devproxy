@@ -424,6 +424,147 @@ func TestRouteSync_handleStart_FullFlow(t *testing.T) {
 	})
 }
 
+func TestRouteSync_handleStart_ProjectInfo(t *testing.T) {
+	t.Run("extracts Docker Compose project info from labels", func(t *testing.T) {
+		registry := proxy.NewRegistry()
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		mockAPI := newMockBuilder().
+			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+				return makeContainerInspectResponse(containerID, "myapp-web-1", "172.17.0.5", "bridge"), nil
+			}).
+			build()
+
+		client := NewClientWithAPI(mockAPI, logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
+
+		event := ContainerEvent{
+			ContainerID:   "container123abc",
+			ContainerName: "myapp-web-1",
+			Labels: map[string]string{
+				"devproxy.enable":                        "true",
+				"devproxy.host":                          "app.localhost",
+				"devproxy.port":                          "8080",
+				"com.docker.compose.project":             "myapp",
+				"com.docker.compose.project.working_dir": "/home/user/projects/myapp",
+				"com.docker.compose.service":             "web",
+			},
+			Type: "start",
+		}
+
+		sync.HandleEvent(event)
+
+		// Verify route was added with project info
+		route := registry.Lookup("app.localhost")
+		if route == nil {
+			t.Fatal("expected route to be added")
+		}
+
+		if route.ProjectName != "myapp" {
+			t.Errorf("expected ProjectName 'myapp', got '%s'", route.ProjectName)
+		}
+
+		if route.ProjectDir != "/home/user/projects/myapp" {
+			t.Errorf("expected ProjectDir '/home/user/projects/myapp', got '%s'", route.ProjectDir)
+		}
+	})
+
+	t.Run("handles containers without Docker Compose labels", func(t *testing.T) {
+		registry := proxy.NewRegistry()
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		mockAPI := newMockBuilder().
+			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+				return makeContainerInspectResponse(containerID, "standalone-app", "172.17.0.6", "bridge"), nil
+			}).
+			build()
+
+		client := NewClientWithAPI(mockAPI, logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
+
+		event := ContainerEvent{
+			ContainerID:   "standalone456",
+			ContainerName: "standalone-app",
+			Labels: map[string]string{
+				"devproxy.enable": "true",
+				"devproxy.host":   "standalone.localhost",
+				"devproxy.port":   "3000",
+			},
+			Type: "start",
+		}
+
+		sync.HandleEvent(event)
+
+		// Verify route was added without project info
+		route := registry.Lookup("standalone.localhost")
+		if route == nil {
+			t.Fatal("expected route to be added")
+		}
+
+		if route.ProjectName != "" {
+			t.Errorf("expected empty ProjectName, got '%s'", route.ProjectName)
+		}
+
+		if route.ProjectDir != "" {
+			t.Errorf("expected empty ProjectDir, got '%s'", route.ProjectDir)
+		}
+	})
+
+	t.Run("applies same project info to multiple service configs", func(t *testing.T) {
+		registry := proxy.NewRegistry()
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		mockAPI := newMockBuilder().
+			withContainerInspect(func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+				return makeContainerInspectResponse(containerID, "multi-service", "172.17.0.10", "bridge"), nil
+			}).
+			build()
+
+		client := NewClientWithAPI(mockAPI, logger)
+		sync := NewRouteSync(registry, client, "bridge", logger)
+
+		event := ContainerEvent{
+			ContainerID:   "multicontainer123",
+			ContainerName: "multi-service",
+			Labels: map[string]string{
+				"devproxy.enable":                        "true",
+				"devproxy.services.web.host":             "web.localhost",
+				"devproxy.services.web.port":             "8080",
+				"devproxy.services.api.host":             "api.localhost",
+				"devproxy.services.api.port":             "3000",
+				"com.docker.compose.project":             "multiproject",
+				"com.docker.compose.project.working_dir": "/projects/multi",
+			},
+			Type: "start",
+		}
+
+		sync.HandleEvent(event)
+
+		// Verify both routes have the same project info
+		webRoute := registry.Lookup("web.localhost")
+		if webRoute == nil {
+			t.Fatal("expected web route to be added")
+		}
+		if webRoute.ProjectName != "multiproject" {
+			t.Errorf("expected web route ProjectName 'multiproject', got '%s'", webRoute.ProjectName)
+		}
+		if webRoute.ProjectDir != "/projects/multi" {
+			t.Errorf("expected web route ProjectDir '/projects/multi', got '%s'", webRoute.ProjectDir)
+		}
+
+		apiRoute := registry.Lookup("api.localhost")
+		if apiRoute == nil {
+			t.Fatal("expected api route to be added")
+		}
+		if apiRoute.ProjectName != "multiproject" {
+			t.Errorf("expected api route ProjectName 'multiproject', got '%s'", apiRoute.ProjectName)
+		}
+		if apiRoute.ProjectDir != "/projects/multi" {
+			t.Errorf("expected api route ProjectDir '/projects/multi', got '%s'", apiRoute.ProjectDir)
+		}
+	})
+}
+
 func TestRouteSync_handleStart_CertGeneration(t *testing.T) {
 	t.Run("pre-generates certificate when cert manager is set", func(t *testing.T) {
 		registry := proxy.NewRegistry()

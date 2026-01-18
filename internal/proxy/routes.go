@@ -52,6 +52,13 @@ type Route struct {
 	// ContainerName is the Docker container name for display purposes.
 	ContainerName string
 
+	// ProjectName is the Docker Compose project name (from com.docker.compose.project label).
+	ProjectName string
+
+	// ProjectDir is the host directory containing docker-compose.yml
+	// (from com.docker.compose.project.working_dir label).
+	ProjectDir string
+
 	// CreatedAt is when the route was added.
 	CreatedAt time.Time
 }
