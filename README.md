@@ -1,10 +1,13 @@
 # devproxy
 
-A lightweight, zero-config development proxy for local Docker containers. Automatically routes traffic to your containers using custom domains with full HTTPS support.
+A lightweight, zero-config development proxy for local Docker containers.
+Automatically routes traffic to your containers using custom domains with full
+HTTPS support.
 
 ## Features
 
-- **Automatic Docker Discovery** - Detects containers via labels, no manual configuration needed
+- **Automatic Docker Discovery** - Detects containers via labels, no manual
+  configuration needed
 - **Custom Local Domains** - Use `.localhost` or any custom TLD for your services
 - **Automatic HTTPS** - Generates trusted certificates on-the-fly via built-in CA
 - **DNS Server** - Resolves custom domains without `/etc/hosts` modifications
@@ -76,6 +79,7 @@ sudo devproxy setup
 ```
 
 This will:
+
 1. Create a local Certificate Authority (CA)
 2. Trust the CA in the system keychain
 3. Configure DNS resolver for `.localhost` domains
@@ -112,10 +116,12 @@ Add labels to your containers to enable automatic routing:
 |-------|-------------|---------|
 | `devproxy.enable` | Enable routing for container | `true` |
 | `devproxy.host` | Domain name(s) to route | `myapp.localhost` |
-| `devproxy.port` | Container port to route to | `8080` |
-| `devproxy.tls` | Enable HTTPS | `true` (default) |
+| `devproxy.port` | Container port to route to (default: 80) | `8080` |
+| `devproxy.entrypoint` | TCP entrypoint name for non-HTTP services | `postgres` |
 
 ### Multiple Hosts
+
+Route multiple domains to the same container port:
 
 ```yaml
 labels:
@@ -123,6 +129,39 @@ labels:
   - "devproxy.host=app.localhost,api.localhost"
   - "devproxy.port=3000"
 ```
+
+### Wildcard Hosts
+
+Wildcard patterns are supported for matching subdomains:
+
+```yaml
+labels:
+  - "devproxy.enable=true"
+  - "devproxy.host=*.myapp.localhost"
+  - "devproxy.port=3000"
+```
+
+### Multiple Services (Single Container)
+
+For containers exposing multiple services on different ports, use the `services` syntax:
+
+```yaml
+labels:
+  - "devproxy.enable=true"
+  - "devproxy.services.web.host=app.localhost"
+  - "devproxy.services.web.port=3000"
+  - "devproxy.services.api.host=api.localhost"
+  - "devproxy.services.api.port=4000"
+  - "devproxy.services.db.host=db.localhost"
+  - "devproxy.services.db.port=5432"
+  - "devproxy.services.db.entrypoint=postgres"
+```
+
+Each service name (e.g., `web`, `api`, `db`) can be any identifier. Each service supports:
+
+- `host` (required) - Domain name(s) to route
+- `port` (optional, default: 80) - Container port
+- `entrypoint` (optional) - TCP entrypoint name for non-HTTP services
 
 ### TCP Routing
 
@@ -207,21 +246,23 @@ entrypoints:
   
   # TCP entrypoints for databases and other services
   # The name is used in container labels: devproxy.entrypoint=postgres
+  # Note: Only postgres and mongo are included by default
   postgres:
     listen: ":15432"      # Port devproxy listens on
     target_port: 5432     # Default backend port (optional)
-  
-  mysql:
-    listen: ":13306"
-    target_port: 3306
   
   mongo:
     listen: ":27017"
     target_port: 27017
   
-  redis:
-    listen: ":16379"
-    target_port: 6379
+  # Additional entrypoints can be added as needed:
+  # mysql:
+  #   listen: ":13306"
+  #   target_port: 3306
+  # 
+  # redis:
+  #   listen: ":16379"
+  #   target_port: 6379
 
 # Docker integration settings
 docker:
@@ -258,7 +299,6 @@ If no configuration file exists, devproxy creates one with these defaults:
 | `entrypoints.mongo.target_port` | `27017` |
 | `docker.enabled` | `true` |
 | `docker.socket` | `unix:///var/run/docker.sock` |
-| `docker.label_prefix` | `devproxy` |
 | `logging.level` | `info` |
 | `logging.access_log` | `false` |
 
@@ -270,6 +310,7 @@ If no configuration file exists, devproxy creates one with these defaults:
 | **Linux** | `~/.config/devproxy/config.yaml` | `~/.local/share/devproxy/` |
 
 Data directory contains:
+
 - `ca/` - Root CA certificate and private key
 - `certs/` - Generated TLS certificates
 - `devproxy.log` - Daemon log file
@@ -281,10 +322,12 @@ Environment variables `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are respected.
 ### Hot Reload
 
 Devproxy supports hot reloading of configuration changes. Changes are applied automatically when:
+
 - The config file is modified (file watcher)
 - Docker containers start/stop (automatic discovery)
 
 **Hot-reloadable settings (no restart required):**
+
 | Setting | Description |
 |---------|-------------|
 | `logging.level` | Log level changes apply immediately |
@@ -292,6 +335,7 @@ Devproxy supports hot reloading of configuration changes. Changes are applied au
 | `dns.upstream` | Change upstream DNS server |
 
 **Settings requiring restart:**
+
 | Setting | Description |
 |---------|-------------|
 | `dns.listen` | DNS server listen address/port |
@@ -299,18 +343,21 @@ Devproxy supports hot reloading of configuration changes. Changes are applied au
 | `docker.label_prefix` | Docker label prefix |
 | `docker.socket` | Docker socket path |
 
-When a setting that requires restart is changed, devproxy logs a warning message indicating a restart is needed.
+When a setting that requires restart is changed, devproxy logs a warning message
+indicating a restart is needed.
 
 ## Troubleshooting
 
 ### DNS not resolving
 
 Check if the DNS server is running:
+
 ```bash
 dig @127.0.0.1 myapp.localhost
 ```
 
 Verify resolver configuration:
+
 ```bash
 # macOS
 cat /etc/resolver/localhost
@@ -322,6 +369,7 @@ resolvectl status
 ### Certificate not trusted
 
 Re-run the setup command:
+
 ```bash
 sudo devproxy setup
 ```
@@ -331,11 +379,13 @@ For browsers, you may need to restart them after trusting the CA.
 ### Container not discovered
 
 Ensure labels are correctly set:
+
 ```bash
 docker inspect <container> | grep -A 20 Labels
 ```
 
 Check devproxy logs:
+
 ```bash
 devproxy logs -f
 ```
@@ -343,6 +393,7 @@ devproxy logs -f
 ### Port already in use
 
 Check what's using the ports:
+
 ```bash
 sudo lsof -i :80
 sudo lsof -i :443
@@ -352,18 +403,20 @@ sudo lsof -i :15353  # DNS server
 ### Permission denied
 
 devproxy needs root privileges to:
+
 - Bind to ports below 1024 (53, 80, 443)
 - Modify DNS resolver configuration
 - Trust CA in system keychain
 
 Run with `sudo` or configure capabilities:
+
 ```bash
 sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/devproxy
 ```
 
 ## Architecture
 
-```
+```plaintext
 ┌─────────────────────────────────────────────────────────────┐
 │                        devproxy                             │
 ├─────────────────────────────────────────────────────────────┤
@@ -437,26 +490,17 @@ Releases are automated via GitHub Actions and GoReleaser.
 1. Update `CHANGELOG.md` with the new version
 2. Commit the changes: `git commit -am "chore: prepare release vX.Y.Z"`
 3. Create and push a tag:
+
    ```bash
    git tag vX.Y.Z
    git push origin main --tags
    ```
 
 The release workflow will automatically:
+
 - Build binaries for all platforms (darwin/linux × amd64/arm64)
 - Create a GitHub Release with archives and checksums
 - Update the Homebrew formula in `munichmade/homebrew-tap`
-
-### Homebrew Tap Setup
-
-The Homebrew tap is hosted at [github.com/munichmade/homebrew-tap](https://github.com/munichmade/homebrew-tap).
-
-To set up the tap repository:
-
-1. Create a new repository named `homebrew-tap` under the `munichmade` organization
-2. Add a `Formula/` directory (GoReleaser will create the formula automatically)
-3. Create a Personal Access Token (PAT) with `repo` scope
-4. Add the PAT as a repository secret named `HOMEBREW_TAP_TOKEN` in this repository
 
 ## License
 
