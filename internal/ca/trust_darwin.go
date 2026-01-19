@@ -7,9 +7,15 @@ package ca
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
+
+// isRoot returns true if the current process is running as root.
+func isRoot() bool {
+	return os.Geteuid() == 0
+}
 
 // InstallTrust adds the CA certificate to the macOS System Keychain.
 // This requires sudo/admin privileges.
@@ -29,12 +35,23 @@ func InstallTrust() error {
 	// -d: add to admin cert store
 	// -r trustRoot: trust as root certificate
 	// -k: keychain to add to
-	cmd := exec.Command("sudo", "security", "add-trusted-cert",
-		"-d",
-		"-r", "trustRoot",
-		"-k", "/Library/Keychains/System.keychain",
-		certPath,
-	)
+	var cmd *exec.Cmd
+	if isRoot() {
+		// Already running as root, no need for sudo
+		cmd = exec.Command("security", "add-trusted-cert",
+			"-d",
+			"-r", "trustRoot",
+			"-k", "/Library/Keychains/System.keychain",
+			certPath,
+		)
+	} else {
+		cmd = exec.Command("sudo", "security", "add-trusted-cert",
+			"-d",
+			"-r", "trustRoot",
+			"-k", "/Library/Keychains/System.keychain",
+			certPath,
+		)
+	}
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -50,11 +67,19 @@ func InstallTrust() error {
 // This requires sudo/admin privileges.
 func UninstallTrust() error {
 	// Find and delete the certificate by name
-	// First, we need to find the SHA-1 hash of our certificate
-	cmd := exec.Command("sudo", "security", "delete-certificate",
-		"-c", caCommonName,
-		"/Library/Keychains/System.keychain",
-	)
+	var cmd *exec.Cmd
+	if isRoot() {
+		// Already running as root, no need for sudo
+		cmd = exec.Command("security", "delete-certificate",
+			"-c", caCommonName,
+			"/Library/Keychains/System.keychain",
+		)
+	} else {
+		cmd = exec.Command("sudo", "security", "delete-certificate",
+			"-c", caCommonName,
+			"/Library/Keychains/System.keychain",
+		)
+	}
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -77,13 +102,19 @@ func IsTrusted() bool {
 		return false
 	}
 
-	// Use security verify-cert to check if the CA is actually trusted
-	// This verifies the trust chain, not just presence in keychain
-	cmd := exec.Command("security", "verify-cert",
-		"-c", CertPath(),
+	// Check if the certificate exists in the System Keychain
+	// This is the correct way to verify installation, not verify-cert
+	// (verify-cert returns success for self-signed CAs even if not installed)
+	cmd := exec.Command("security", "find-certificate",
+		"-c", caCommonName,
+		"/Library/Keychains/System.keychain",
 	)
 
-	// verify-cert returns 0 if trusted, non-zero otherwise
+	// Suppress output - we only care about the exit code
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	// find-certificate returns 0 if found, non-zero otherwise
 	return cmd.Run() == nil
 }
 
