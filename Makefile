@@ -69,9 +69,9 @@ fmt:
 ## install: Build and install to /usr/local/bin
 install: build
 	@echo "Installing $(BINARY) to $(INSTALL_DIR)..."
-	@sudo rm $(INSTALL_DIR)/$(BINARY) || echo "No install yet"
-	@sudo cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
-	@sudo chmod +x $(INSTALL_DIR)/$(BINARY)
+	@rm $(INSTALL_DIR)/$(BINARY) || echo "No install yet"
+	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
+	@chmod +x $(INSTALL_DIR)/$(BINARY)
 	@echo "Installed successfully"
 
 ## uninstall: Remove from /usr/local/bin
