@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.3 2026-01-30
+
+### Removed
+
+- **Service manager integration removed** - The `internal/service` package and all launchd/systemd integration code has been removed
+  - Removed `--service` flag from `devproxy setup`
+  - Removed socket activation support
+  - Removed automatic service installation/uninstallation
+  - Removed `go-launchd` dependency
+
+### Changed
+
+- `devproxy status` no longer shows socket activation state
+- `devproxy setup` no longer offers to install system services
+- `devproxy uninstall` no longer removes system services
+
+### Migration
+
+If you previously installed devproxy as a system service, you must manually remove it:
+
+**macOS:**
+```bash
+sudo launchctl unload /Library/LaunchDaemons/com.devproxy.daemon.plist
+sudo rm /Library/LaunchDaemons/com.devproxy.daemon.plist
+```
+
+**Linux:**
+```bash
+sudo systemctl stop devproxy
+sudo systemctl disable devproxy
+sudo rm /etc/systemd/system/devproxy.service
+sudo systemctl daemon-reload
+```
+
+After removal, use `devproxy start` to run as a daemon or `devproxy run` for foreground mode.
+
 ## 0.2.2 2026-01-30
 
 ### Changed
@@ -18,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ```bash
     sudo devproxy setup --service
     ```
+
+- `devproxy status` now correctly shows socket activation state
+  - Shows "ready (socket activation)" when service is loaded but idle
+  - Displays which ports are owned by launchd
+  - Shows routes from last run when socket-activated but not yet running
 
 ## 0.2.1 2026-01-19
 
