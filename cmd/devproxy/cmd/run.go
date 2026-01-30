@@ -21,6 +21,7 @@ import (
 	"github.com/munichmade/devproxy/internal/paths"
 	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/proxy"
+	"github.com/munichmade/devproxy/internal/service"
 )
 
 // chownRecursive changes ownership of a directory and all its contents
@@ -72,22 +73,43 @@ func runDaemon() error {
 	}
 
 	// =========================================================================
-	// PRIVILEGED SECTION - Bind to privileged ports while still root
+	// PRIVILEGED SECTION - Try socket activation, fall back to direct binding
 	// =========================================================================
 	httpCfg, _ := cfg.GetEntrypoint("http")
 	httpsCfg, _ := cfg.GetEntrypoint("https")
 
-	// Bind HTTP port (requires root for port 80)
-	httpListener, err := net.Listen("tcp", httpCfg.Listen)
+	// Try launchd socket activation first (macOS service)
+	// When running under launchd, sockets are pre-bound by the system
+	httpListener, err := service.ActivatedListener("HTTPListener")
 	if err != nil {
-		return fmt.Errorf("failed to bind HTTP port %s: %w", httpCfg.Listen, err)
+		logging.Debug("launchd HTTP socket activation failed", "error", err)
+	}
+	httpsListener, err := service.ActivatedListener("HTTPSListener")
+	if err != nil {
+		logging.Debug("launchd HTTPS socket activation failed", "error", err)
 	}
 
-	// Bind HTTPS port (requires root for port 443)
-	httpsListener, err := net.Listen("tcp", httpsCfg.Listen)
-	if err != nil {
-		httpListener.Close()
-		return fmt.Errorf("failed to bind HTTPS port %s: %w", httpsCfg.Listen, err)
+	// Track if we successfully used socket activation
+	usedSocketActivation := httpListener != nil && httpsListener != nil
+
+	if usedSocketActivation {
+		fmt.Fprintf(os.Stderr, "using launchd socket activation for HTTP/HTTPS\n")
+	}
+
+	// Fall back to direct binding if socket activation not available
+	if httpListener == nil {
+		httpListener, err = net.Listen("tcp", httpCfg.Listen)
+		if err != nil {
+			return fmt.Errorf("failed to bind HTTP port %s: %w", httpCfg.Listen, err)
+		}
+	}
+
+	if httpsListener == nil {
+		httpsListener, err = net.Listen("tcp", httpsCfg.Listen)
+		if err != nil {
+			httpListener.Close()
+			return fmt.Errorf("failed to bind HTTPS port %s: %w", httpsCfg.Listen, err)
+		}
 	}
 
 	// Bind DNS port if enabled
@@ -124,9 +146,10 @@ func runDaemon() error {
 	}
 
 	// =========================================================================
-	// DROP PRIVILEGES - No longer need root after binding ports
+	// DROP PRIVILEGES - Only needed when NOT using socket activation
+	// When using launchd socket activation, we're already running unprivileged
 	// =========================================================================
-	if originalUser != nil {
+	if !usedSocketActivation && originalUser != nil {
 		// Before dropping privileges, ensure data directories are owned by the original user
 		// This is needed because directories may have been created by root
 		dataDir := paths.DataDir()
