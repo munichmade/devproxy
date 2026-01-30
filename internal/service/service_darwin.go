@@ -86,8 +86,23 @@ func generatePlist(binaryPath string) string {
     </array>
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
-    <true/>
+    <key>Sockets</key>
+    <dict>
+        <key>HTTPListener</key>
+        <dict>
+            <key>SockServiceName</key>
+            <string>80</string>
+            <key>SockType</key>
+            <string>stream</string>
+        </dict>
+        <key>HTTPSListener</key>
+        <dict>
+            <key>SockServiceName</key>
+            <string>443</string>
+            <key>SockType</key>
+            <string>stream</string>
+        </dict>
+    </dict>
     <key>StandardOutPath</key>
     <string>/var/log/devproxy.log</string>
     <key>StandardErrorPath</key>
