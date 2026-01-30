@@ -73,12 +73,13 @@ func getStatus() Status {
 	d := daemon.New()
 
 	status := Status{
-		Running:     d.IsRunning(),
 		Entrypoints: []Entrypoint{},
 		Projects:    make(map[string]*ProjectRoutes),
 	}
 
-	if status.Running {
+	// Check if daemon is running via PID file
+	if d.IsRunning() {
+		status.Running = true
 		pid, _ := d.GetPID()
 		status.PID = pid
 	}

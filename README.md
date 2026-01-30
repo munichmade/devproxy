@@ -55,10 +55,6 @@ brew install munichmade/tap/devproxy
 curl -L https://github.com/munichmade/devproxy/releases/latest/download/devproxy-linux-amd64 -o devproxy
 chmod +x devproxy
 sudo mv devproxy /usr/local/bin/
-
-# Install systemd service
-sudo cp init/devproxy.service /etc/systemd/system/
-sudo systemctl daemon-reload
 ```
 
 ### Build from Source

@@ -21,7 +21,6 @@ import (
 	"github.com/munichmade/devproxy/internal/paths"
 	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/proxy"
-	"github.com/munichmade/devproxy/internal/service"
 )
 
 // chownRecursive changes ownership of a directory and all its contents
@@ -39,8 +38,8 @@ func chownRecursive(path string, uid, gid int) error {
 
 var runCmd = &cobra.Command{
 	Use:    "run",
-	Short:  "Run daemon in foreground (for systemd/launchd)",
-	Long:   `Run the devproxy daemon in the foreground. Used by systemd/launchd service managers.`,
+	Short:  "Run daemon in foreground",
+	Long:   `Run the devproxy daemon in the foreground. Useful for debugging or running under a process supervisor.`,
 	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runDaemon(); err != nil {
@@ -73,43 +72,22 @@ func runDaemon() error {
 	}
 
 	// =========================================================================
-	// PRIVILEGED SECTION - Try socket activation, fall back to direct binding
+	// PRIVILEGED SECTION - Bind to privileged ports while running as root
 	// =========================================================================
 	httpCfg, _ := cfg.GetEntrypoint("http")
 	httpsCfg, _ := cfg.GetEntrypoint("https")
 
-	// Try launchd socket activation first (macOS service)
-	// When running under launchd, sockets are pre-bound by the system
-	httpListener, err := service.ActivatedListener("HTTPListener")
+	// Bind HTTP port
+	httpListener, err := net.Listen("tcp", httpCfg.Listen)
 	if err != nil {
-		logging.Debug("launchd HTTP socket activation failed", "error", err)
+		return fmt.Errorf("failed to bind HTTP port %s: %w", httpCfg.Listen, err)
 	}
-	httpsListener, err := service.ActivatedListener("HTTPSListener")
+
+	// Bind HTTPS port
+	httpsListener, err := net.Listen("tcp", httpsCfg.Listen)
 	if err != nil {
-		logging.Debug("launchd HTTPS socket activation failed", "error", err)
-	}
-
-	// Track if we successfully used socket activation
-	usedSocketActivation := httpListener != nil && httpsListener != nil
-
-	if usedSocketActivation {
-		fmt.Fprintf(os.Stderr, "using launchd socket activation for HTTP/HTTPS\n")
-	}
-
-	// Fall back to direct binding if socket activation not available
-	if httpListener == nil {
-		httpListener, err = net.Listen("tcp", httpCfg.Listen)
-		if err != nil {
-			return fmt.Errorf("failed to bind HTTP port %s: %w", httpCfg.Listen, err)
-		}
-	}
-
-	if httpsListener == nil {
-		httpsListener, err = net.Listen("tcp", httpsCfg.Listen)
-		if err != nil {
-			httpListener.Close()
-			return fmt.Errorf("failed to bind HTTPS port %s: %w", httpsCfg.Listen, err)
-		}
+		httpListener.Close()
+		return fmt.Errorf("failed to bind HTTPS port %s: %w", httpsCfg.Listen, err)
 	}
 
 	// Bind DNS port if enabled
@@ -146,10 +124,9 @@ func runDaemon() error {
 	}
 
 	// =========================================================================
-	// DROP PRIVILEGES - Only needed when NOT using socket activation
-	// When using launchd socket activation, we're already running unprivileged
+	// DROP PRIVILEGES - Run as original user after binding privileged ports
 	// =========================================================================
-	if !usedSocketActivation && originalUser != nil {
+	if originalUser != nil {
 		// Before dropping privileges, ensure data directories are owned by the original user
 		// This is needed because directories may have been created by root
 		dataDir := paths.DataDir()
