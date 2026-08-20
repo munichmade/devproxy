@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 
@@ -23,16 +25,13 @@ import (
 	"github.com/munichmade/devproxy/internal/proxy"
 )
 
-// chownRecursive changes ownership of a directory and all its contents
+// chownRecursive changes ownership of a directory and all its contents.
 func chownRecursive(path string, uid, gid int) error {
 	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Skip files we can't access
+			return err
 		}
-		if err := syscall.Chown(name, uid, gid); err != nil {
-			return nil // Skip files we can't chown
-		}
-		return nil
+		return syscall.Lchown(name, uid, gid)
 	})
 }
 
@@ -51,8 +50,41 @@ var runCmd = &cobra.Command{
 	},
 }
 
+var initConfigCmd = &cobra.Command{
+	Use:    "init-config",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := config.Load()
+		return err
+	},
+}
+
 func init() {
-	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(runCmd, initConfigCmd)
+}
+
+func loadConfig(originalUser *privilege.Info) (*config.Config, error) {
+	if originalUser == nil {
+		return config.Load()
+	}
+	if err := chownRecursive(paths.ConfigDir(), originalUser.UID, originalUser.GID); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed to chown config directory: %w", err)
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get executable path: %w", err)
+	}
+	cmd := exec.Command(executable, "init-config")
+	cmd.Env = os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{
+		Uid: uint32(originalUser.UID),
+		Gid: uint32(originalUser.GID),
+	}}
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to initialize user config: %w", err)
+	}
+	return config.LoadExisting()
 }
 
 func runDaemon() error {
@@ -66,9 +98,9 @@ func runDaemon() error {
 	}
 
 	// Load config first to get port settings
-	cfg, err := config.Load()
+	cfg, err := loadConfig(originalUser)
 	if err != nil {
-		cfg = config.Default()
+		return err
 	}
 
 	// =========================================================================

@@ -89,6 +89,11 @@ func Load() (*Config, error) {
 	return LoadFromFile(paths.ConfigFile())
 }
 
+// LoadExisting reads the configuration without creating a default file.
+func LoadExisting() (*Config, error) {
+	return loadExisting(paths.ConfigFile())
+}
+
 // LoadFromFile reads the configuration from the specified file path.
 // If the file doesn't exist, it creates a default configuration file.
 func LoadFromFile(path string) (*Config, error) {
@@ -102,23 +107,22 @@ func LoadFromFile(path string) (*Config, error) {
 		return cfg, nil
 	}
 
-	// Read existing config
+	return loadExisting(path)
+}
+
+func loadExisting(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Start with defaults and overlay with file values
 	cfg := Default()
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
-
-	// Validate the configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
-
 	return cfg, nil
 }
 
