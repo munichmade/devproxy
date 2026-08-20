@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/munichmade/devproxy/internal/ca"
-	"github.com/munichmade/devproxy/internal/config"
 	"github.com/munichmade/devproxy/internal/privilege"
 	"github.com/munichmade/devproxy/internal/resolver"
 )
@@ -34,11 +33,17 @@ Administrator privileges are required to install the CA and configure DNS.`,
 		fmt.Println("Setting up devproxy...")
 		fmt.Println()
 
-		// Load config to get port settings
-		cfg, err := config.Load()
+		originalUser, err := privilege.GetOriginalUser()
 		if err != nil {
-			// Use defaults if config doesn't exist
-			cfg = config.Default()
+			fmt.Fprintf(os.Stderr, "failed to get original user: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Load config to get port settings
+		cfg, err := loadConfig(originalUser)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to load user config: %v\n", err)
+			os.Exit(1)
 		}
 
 		// Step 1: Generate CA if needed
