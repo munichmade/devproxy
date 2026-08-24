@@ -98,12 +98,12 @@ func getStatus() Status {
 
 	if ep, ok := cfg.Entrypoints["http"]; ok {
 		status.Entrypoints = append(status.Entrypoints,
-			Entrypoint{Name: "http", Listen: ep.Listen, Protocol: "HTTP", Status: getListenerStatus(status.Running)})
+			Entrypoint{Name: "http", Listen: strings.Join(ep.Listen, ", "), Protocol: "HTTP", Status: getListenerStatus(status.Running)})
 	}
 
 	if ep, ok := cfg.Entrypoints["https"]; ok {
 		status.Entrypoints = append(status.Entrypoints,
-			Entrypoint{Name: "https", Listen: ep.Listen, Protocol: "HTTPS", Status: getListenerStatus(status.Running)})
+			Entrypoint{Name: "https", Listen: strings.Join(ep.Listen, ", "), Protocol: "HTTPS", Status: getListenerStatus(status.Running)})
 	}
 
 	// Add TCP entrypoints
@@ -113,7 +113,7 @@ func getStatus() Status {
 		}
 		if ep.TargetPort > 0 {
 			status.Entrypoints = append(status.Entrypoints,
-				Entrypoint{Name: name, Listen: ep.Listen, Protocol: "TCP", Status: getListenerStatus(status.Running)})
+				Entrypoint{Name: name, Listen: strings.Join(ep.Listen, ", "), Protocol: "TCP", Status: getListenerStatus(status.Running)})
 		}
 	}
 

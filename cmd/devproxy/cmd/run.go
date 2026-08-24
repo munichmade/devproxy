@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -63,6 +64,37 @@ func init() {
 	rootCmd.AddCommand(runCmd, initConfigCmd)
 }
 
+func listenAll(addresses []string) ([]net.Listener, error) {
+	return listenAllWith(addresses, net.Listen)
+}
+
+func listenAllWith(addresses []string, listen func(string, string) (net.Listener, error)) ([]net.Listener, error) {
+	listeners := make([]net.Listener, 0, len(addresses))
+	var unavailableErr error
+	for _, address := range addresses {
+		listener, err := listen("tcp", address)
+		if err != nil {
+			if errors.Is(err, syscall.EAFNOSUPPORT) || errors.Is(err, syscall.EADDRNOTAVAIL) {
+				unavailableErr = fmt.Errorf("failed to listen on %s: %w", address, err)
+				continue
+			}
+			closeListeners(listeners)
+			return nil, fmt.Errorf("failed to listen on %s: %w", address, err)
+		}
+		listeners = append(listeners, listener)
+	}
+	if len(listeners) == 0 && unavailableErr != nil {
+		return nil, unavailableErr
+	}
+	return listeners, nil
+}
+
+func closeListeners(listeners []net.Listener) {
+	for _, listener := range listeners {
+		_ = listener.Close()
+	}
+}
+
 func loadConfig(originalUser *privilege.Info) (*config.Config, error) {
 	if originalUser == nil {
 		return config.Load()
@@ -109,51 +141,46 @@ func runDaemon() error {
 	httpCfg, _ := cfg.GetEntrypoint("http")
 	httpsCfg, _ := cfg.GetEntrypoint("https")
 
-	// Bind HTTP port
-	httpListener, err := net.Listen("tcp", httpCfg.Listen)
+	// Bind HTTP ports
+	httpListeners, err := listenAll(httpCfg.Listen)
 	if err != nil {
-		return fmt.Errorf("failed to bind HTTP port %s: %w", httpCfg.Listen, err)
+		return fmt.Errorf("failed to bind HTTP ports: %w", err)
 	}
+	defer closeListeners(httpListeners)
 
-	// Bind HTTPS port
-	httpsListener, err := net.Listen("tcp", httpsCfg.Listen)
+	// Bind HTTPS ports
+	httpsListeners, err := listenAll(httpsCfg.Listen)
 	if err != nil {
-		httpListener.Close()
-		return fmt.Errorf("failed to bind HTTPS port %s: %w", httpsCfg.Listen, err)
+		return fmt.Errorf("failed to bind HTTPS ports: %w", err)
 	}
+	defer closeListeners(httpsListeners)
 
 	// Bind DNS port if enabled
 	var dnsListener net.PacketConn
 	if cfg.DNS.Enabled {
 		dnsListener, err = net.ListenPacket("udp", cfg.DNS.Listen)
 		if err != nil {
-			httpListener.Close()
-			httpsListener.Close()
 			return fmt.Errorf("failed to bind DNS port %s: %w", cfg.DNS.Listen, err)
 		}
+		defer dnsListener.Close()
 	}
 
 	// Bind TCP entrypoint ports
-	tcpListeners := make(map[string]net.Listener)
+	tcpListeners := make(map[string][]net.Listener)
+	var allTCPListeners []net.Listener
 	for name, epCfg := range cfg.Entrypoints {
 		if name == "http" || name == "https" || epCfg.TargetPort <= 0 {
 			continue
 		}
-		listener, err := net.Listen("tcp", epCfg.Listen)
+		listeners, err := listenAll(epCfg.Listen)
 		if err != nil {
-			// Clean up already-bound listeners
-			httpListener.Close()
-			httpsListener.Close()
-			if dnsListener != nil {
-				dnsListener.Close()
-			}
-			for _, l := range tcpListeners {
-				l.Close()
-			}
-			return fmt.Errorf("failed to bind TCP entrypoint %s on %s: %w", name, epCfg.Listen, err)
+			closeListeners(allTCPListeners)
+			return fmt.Errorf("failed to bind TCP entrypoint %s: %w", name, err)
 		}
-		tcpListeners[name] = listener
+		tcpListeners[name] = listeners
+		allTCPListeners = append(allTCPListeners, listeners...)
 	}
+	defer closeListeners(allTCPListeners)
 
 	// =========================================================================
 	// DROP PRIVILEGES - Run as original user after binding privileged ports
@@ -175,15 +202,6 @@ func runDaemon() error {
 		}
 
 		if err := privilege.Drop(originalUser); err != nil {
-			// Clean up listeners before returning
-			httpListener.Close()
-			httpsListener.Close()
-			if dnsListener != nil {
-				dnsListener.Close()
-			}
-			for _, l := range tcpListeners {
-				l.Close()
-			}
 			return fmt.Errorf("failed to drop privileges: %w", err)
 		}
 		// Log after dropping privileges (logging not set up yet)
@@ -296,22 +314,28 @@ func runDaemon() error {
 	// =========================================================================
 	// Extract HTTPS port for redirect
 	httpsPort := 443
-	if _, portStr, err := net.SplitHostPort(httpsCfg.Listen); err == nil {
+	if _, portStr, err := net.SplitHostPort(httpsCfg.Listen[0]); err == nil {
 		if p, err := net.LookupPort("tcp", portStr); err == nil {
 			httpsPort = p
 		}
 	}
 
-	httpServer := proxy.NewHTTPServerWithListener(httpListener, httpsPort)
-	if err := httpServer.Start(); err != nil {
-		return fmt.Errorf("failed to start HTTP server: %w", err)
+	httpServers := make([]*proxy.HTTPServer, 0, len(httpListeners))
+	for _, listener := range httpListeners {
+		httpServer := proxy.NewHTTPServerWithListener(listener, httpsPort)
+		if err := httpServer.Start(); err != nil {
+			return fmt.Errorf("failed to start HTTP server: %w", err)
+		}
+		httpServers = append(httpServers, httpServer)
 	}
 	shutdown.OnShutdown(func() {
-		if err := httpServer.Stop(); err != nil {
-			logging.Error("failed to stop HTTP server", "error", err)
+		for _, server := range httpServers {
+			if err := server.Stop(); err != nil {
+				logging.Error("failed to stop HTTP server", "error", err)
+			}
 		}
 	})
-	logging.Info("HTTP server started", "address", httpCfg.Listen)
+	logging.Info("HTTP servers started", "addresses", httpCfg.Listen)
 
 	// =========================================================================
 	// Start HTTPS Server (using pre-bound listener)
@@ -324,16 +348,22 @@ func runDaemon() error {
 	httpsHandler := proxy.NewAccessLogger(proxyHandler, slog.Default(), func() bool {
 		return (*cfgPtr).Logging.AccessLog
 	})
-	httpsServer := proxy.NewHTTPSServerWithListener(httpsListener, certManager, httpsHandler)
-	if err := httpsServer.Start(); err != nil {
-		return fmt.Errorf("failed to start HTTPS server: %w", err)
+	httpsServers := make([]*proxy.HTTPSServer, 0, len(httpsListeners))
+	for _, listener := range httpsListeners {
+		httpsServer := proxy.NewHTTPSServerWithListener(listener, certManager, httpsHandler)
+		if err := httpsServer.Start(); err != nil {
+			return fmt.Errorf("failed to start HTTPS server: %w", err)
+		}
+		httpsServers = append(httpsServers, httpsServer)
 	}
 	shutdown.OnShutdown(func() {
-		if err := httpsServer.Stop(); err != nil {
-			logging.Error("failed to stop HTTPS server", "error", err)
+		for _, server := range httpsServers {
+			if err := server.Stop(); err != nil {
+				logging.Error("failed to stop HTTPS server", "error", err)
+			}
 		}
 	})
-	logging.Info("HTTPS server started", "address", httpsCfg.Listen)
+	logging.Info("HTTPS servers started", "addresses", httpsCfg.Listen)
 
 	// =========================================================================
 	// Start TCP Entrypoints (using pre-bound listeners)
@@ -350,28 +380,26 @@ func runDaemon() error {
 			continue
 		}
 
-		listener, ok := tcpListeners[name]
-		if !ok {
-			continue
-		}
+		listeners := tcpListeners[name]
+		for _, listener := range listeners {
+			tcpCfg := proxy.TCPEntrypointConfig{
+				Name:        name,
+				Listen:      listener.Addr().String(),
+				TargetPort:  epCfg.TargetPort,
+				Registry:    registry,
+				CertManager: certManager,
+				Logger:      logger,
+			}
 
-		tcpCfg := proxy.TCPEntrypointConfig{
-			Name:        name,
-			Listen:      epCfg.Listen,
-			TargetPort:  epCfg.TargetPort,
-			Registry:    registry,
-			CertManager: certManager,
-			Logger:      logger,
-		}
+			tcpEntry := proxy.NewTCPEntrypointWithListener(tcpCfg, listener)
+			if err := tcpEntry.Start(ctx); err != nil {
+				logging.Error("failed to start TCP entrypoint", "name", name, "error", err)
+				continue
+			}
 
-		tcpEntry := proxy.NewTCPEntrypointWithListener(tcpCfg, listener)
-		if err := tcpEntry.Start(ctx); err != nil {
-			logging.Error("failed to start TCP entrypoint", "name", name, "error", err)
-			continue
+			tcpEntrypoints = append(tcpEntrypoints, tcpEntry)
 		}
-
-		tcpEntrypoints = append(tcpEntrypoints, tcpEntry)
-		logging.Info("TCP entrypoint started", "name", name, "address", epCfg.Listen, "target_port", epCfg.TargetPort)
+		logging.Info("TCP entrypoint started", "name", name, "addresses", epCfg.Listen, "target_port", epCfg.TargetPort)
 	}
 
 	// Register TCP entrypoint cleanup
@@ -481,7 +509,7 @@ func applyConfigChanges(oldCfg, newCfg *config.Config, dnsServer *dns.Server) {
 
 	// Update DNS settings (domains and upstream only - listen address requires restart)
 	if dnsServer != nil {
-		domainsChanged := !equalStringSlices(oldCfg.DNS.Domains, newCfg.DNS.Domains)
+		domainsChanged := !slices.Equal(oldCfg.DNS.Domains, newCfg.DNS.Domains)
 		upstreamChanged := oldCfg.DNS.Upstream != newCfg.DNS.Upstream
 
 		if domainsChanged || upstreamChanged {
@@ -498,23 +526,10 @@ func applyConfigChanges(oldCfg, newCfg *config.Config, dnsServer *dns.Server) {
 	// Check for entrypoint changes
 	for name, oldEp := range oldCfg.Entrypoints {
 		if newEp, exists := newCfg.Entrypoints[name]; exists {
-			if oldEp.Listen != newEp.Listen {
+			if !slices.Equal(oldEp.Listen, newEp.Listen) {
 				logging.Warn("entrypoint listen address changed - restart required to apply",
 					"entrypoint", name, "old", oldEp.Listen, "new", newEp.Listen)
 			}
 		}
 	}
-}
-
-// equalStringSlices compares two string slices for equality.
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -94,10 +95,12 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
+	host = strings.Trim(host, "[]")
 
 	// Add HTTPS port if not the default 443
-	if s.httpsPort != 443 {
-		host = fmt.Sprintf("%s:%d", host, s.httpsPort)
+	host = net.JoinHostPort(host, fmt.Sprint(s.httpsPort))
+	if s.httpsPort == 443 {
+		host = strings.TrimSuffix(host, ":443")
 	}
 
 	// Build redirect URL

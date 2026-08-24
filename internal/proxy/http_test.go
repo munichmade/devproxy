@@ -44,6 +44,13 @@ func TestHTTPServer_RedirectToHTTPS(t *testing.T) {
 			expectedURL:    "https://app.localhost/",
 			expectedStatus: http.StatusMovedPermanently,
 		},
+		{
+			name:           "IPv6 host with port",
+			requestURL:     "/",
+			host:           "[::1]:80",
+			expectedURL:    "https://[::1]/",
+			expectedStatus: http.StatusMovedPermanently,
+		},
 	}
 
 	for _, tt := range tests {
@@ -100,13 +107,13 @@ func TestHTTPServer_NonStandardHTTPSPort(t *testing.T) {
 	server := NewHTTPServer("127.0.0.1:0", 8443)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Host = "app.localhost"
+	req.Host = "[::1]:80"
 	w := httptest.NewRecorder()
 
 	server.ServeHTTP(w, req)
 
 	location := w.Header().Get("Location")
-	expected := "https://app.localhost:8443/"
+	expected := "https://[::1]:8443/"
 	if location != expected {
 		t.Errorf("expected redirect to %q, got %q", expected, location)
 	}

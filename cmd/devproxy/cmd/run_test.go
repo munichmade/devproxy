@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -21,6 +22,51 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestListenAll(t *testing.T) {
+	probe, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	probe.Close()
+
+	listeners, err := listenAll([]string{"127.0.0.1:0", "[::1]:0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeListeners(listeners)
+
+	if len(listeners) != 2 {
+		t.Fatalf("len(listeners) = %d, want 2", len(listeners))
+	}
+	for _, listener := range listeners {
+		if !listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
+			t.Errorf("listener address %s is not loopback", listener.Addr())
+		}
+	}
+}
+
+func TestListenAllSkipsUnavailableFamily(t *testing.T) {
+	listen := func(network, address string) (net.Listener, error) {
+		if address == "[::1]:0" {
+			return nil, syscall.EAFNOSUPPORT
+		}
+		return net.Listen(network, address)
+	}
+
+	listeners, err := listenAllWith([]string{"[::1]:0", "127.0.0.1:0"}, listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeListeners(listeners)
+	if len(listeners) != 1 {
+		t.Fatalf("len(listeners) = %d, want 1", len(listeners))
+	}
+
+	if _, err := listenAllWith([]string{"[::1]:0"}, listen); err == nil {
+		t.Fatal("listenAllWith() error = nil, want unavailable address error")
+	}
 }
 
 func TestChownRecursive(t *testing.T) {

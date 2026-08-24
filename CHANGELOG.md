@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.5 2026-08-24
+
+### Changed
+
+- Entrypoints bind IPv4 and IPv6 loopback addresses by default, preventing LAN exposure while supporting both localhost stacks.
+- Entrypoint `listen` accepts one address or a list; legacy wildcard addresses now resolve to both loopback addresses.
+- **Breaking:** Entrypoints accept loopback IP addresses only. Replace LAN addresses with `127.0.0.1:port` and `[::1]:port`.
+
 ## 0.2.4 2026-08-20
 
 ### Fixed
