@@ -230,34 +230,46 @@ dns:
   upstream: "8.8.8.8:53"
 
 # Entrypoints define the ports devproxy listens on
+# Entrypoints are restricted to IPv4 and IPv6 loopback addresses
 # Reserved names: "http" and "https" are handled specially
 entrypoints:
   # HTTP entrypoint (redirects to HTTPS by default)
   http:
-    listen: ":80"
+    listen:
+      - "127.0.0.1:80"
+      - "[::1]:80"
   
   # HTTPS entrypoint (TLS termination with auto-generated certs)
   https:
-    listen: ":443"
+    listen:
+      - "127.0.0.1:443"
+      - "[::1]:443"
   
   # TCP entrypoints for databases and other services
   # The name is used in container labels: devproxy.entrypoint=postgres
   # Note: Only postgres and mongo are included by default
   postgres:
-    listen: ":15432"      # Port devproxy listens on
+    listen:
+      - "127.0.0.1:15432"
+      - "[::1]:15432"
     target_port: 5432     # Default backend port (optional)
   
   mongo:
-    listen: ":27017"
+    listen:
+      - "127.0.0.1:27017"
+      - "[::1]:27017"
     target_port: 27017
   
-  # Additional entrypoints can be added as needed:
+  # Additional entrypoints can be added as needed. A single string remains valid;
+  # legacy wildcard strings such as ":13306" are restricted to both loopback addresses:
   # mysql:
-  #   listen: ":13306"
+  #   listen: "127.0.0.1:13306"
   #   target_port: 3306
   # 
   # redis:
-  #   listen: ":16379"
+  #   listen:
+  #     - "127.0.0.1:16379"
+  #     - "[::1]:16379"
   #   target_port: 6379
 
 # Docker integration settings
@@ -287,11 +299,11 @@ If no configuration file exists, devproxy creates one with these defaults:
 | `dns.listen` | `:15353` |
 | `dns.domains` | `["localhost"]` |
 | `dns.upstream` | `8.8.8.8:53` |
-| `entrypoints.http.listen` | `:80` |
-| `entrypoints.https.listen` | `:443` |
-| `entrypoints.postgres.listen` | `:15432` |
+| `entrypoints.http.listen` | `["127.0.0.1:80", "[::1]:80"]` |
+| `entrypoints.https.listen` | `["127.0.0.1:443", "[::1]:443"]` |
+| `entrypoints.postgres.listen` | `["127.0.0.1:15432", "[::1]:15432"]` |
 | `entrypoints.postgres.target_port` | `5432` |
-| `entrypoints.mongo.listen` | `:27017` |
+| `entrypoints.mongo.listen` | `["127.0.0.1:27017", "[::1]:27017"]` |
 | `entrypoints.mongo.target_port` | `27017` |
 | `docker.enabled` | `true` |
 | `docker.socket` | `unix:///var/run/docker.sock` |

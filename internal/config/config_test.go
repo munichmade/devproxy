@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -26,23 +27,23 @@ func TestDefault(t *testing.T) {
 	}
 
 	http, ok := cfg.Entrypoints["http"]
-	if !ok || http.Listen != ":80" {
-		t.Errorf("Entrypoints[http] = %+v, want Listen=:80", http)
+	if !ok || !slices.Equal(http.Listen, ListenAddresses{"127.0.0.1:80", "[::1]:80"}) {
+		t.Errorf("Entrypoints[http] = %+v, want dual-stack loopback listeners", http)
 	}
 
 	https, ok := cfg.Entrypoints["https"]
-	if !ok || https.Listen != ":443" {
-		t.Errorf("Entrypoints[https] = %+v, want Listen=:443", https)
+	if !ok || !slices.Equal(https.Listen, ListenAddresses{"127.0.0.1:443", "[::1]:443"}) {
+		t.Errorf("Entrypoints[https] = %+v, want dual-stack loopback listeners", https)
 	}
 
 	postgres, ok := cfg.Entrypoints["postgres"]
-	if !ok || postgres.Listen != ":15432" || postgres.TargetPort != 5432 {
-		t.Errorf("Entrypoints[postgres] = %+v, want Listen=:15432, TargetPort=5432", postgres)
+	if !ok || !slices.Equal(postgres.Listen, ListenAddresses{"127.0.0.1:15432", "[::1]:15432"}) || postgres.TargetPort != 5432 {
+		t.Errorf("Entrypoints[postgres] = %+v, want dual-stack loopback listeners and TargetPort=5432", postgres)
 	}
 
 	mongo, ok := cfg.Entrypoints["mongo"]
-	if !ok || mongo.Listen != ":27017" || mongo.TargetPort != 27017 {
-		t.Errorf("Entrypoints[mongo] = %+v, want Listen=:27017, TargetPort=27017", mongo)
+	if !ok || !slices.Equal(mongo.Listen, ListenAddresses{"127.0.0.1:27017", "[::1]:27017"}) || mongo.TargetPort != 27017 {
+		t.Errorf("Entrypoints[mongo] = %+v, want dual-stack loopback listeners and TargetPort=27017", mongo)
 	}
 
 	// Docker defaults
@@ -91,6 +92,20 @@ func TestValidate(t *testing.T) {
 		{
 			name:    "entrypoint without listen",
 			modify:  func(c *Config) { c.Entrypoints["test"] = EntrypointConfig{} },
+			wantErr: true,
+		},
+		{
+			name: "entrypoint on LAN address",
+			modify: func(c *Config) {
+				c.Entrypoints["http"] = EntrypointConfig{Listen: ListenAddresses{"192.168.1.10:80"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "entrypoint with mixed ports",
+			modify: func(c *Config) {
+				c.Entrypoints["https"] = EntrypointConfig{Listen: ListenAddresses{"127.0.0.1:443", "[::1]:8443"}}
+			},
 			wantErr: true,
 		},
 		{
@@ -207,6 +222,38 @@ func TestLoadFromFile_CreatesDefault(t *testing.T) {
 	}
 }
 
+func TestLoadFromFile_ListenFormats(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want ListenAddresses
+	}{
+		{name: "single string", yaml: `"127.0.0.1:8080"`, want: ListenAddresses{"127.0.0.1:8080"}},
+		{name: "localhost", yaml: `"LOCALHOST.:8080"`, want: ListenAddresses{"127.0.0.1:8080", "[::1]:8080"}},
+		{name: "legacy wildcard", yaml: `":8080"`, want: ListenAddresses{"127.0.0.1:8080", "[::1]:8080"}},
+		{name: "address list", yaml: `["127.0.0.1:8080", "[::1]:8080"]`, want: ListenAddresses{"127.0.0.1:8080", "[::1]:8080"}},
+		{name: "duplicate wildcards", yaml: `["0.0.0.0:8080", "[::]:8080"]`, want: ListenAddresses{"127.0.0.1:8080", "[::1]:8080"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			data := []byte("entrypoints:\n  http:\n    listen: " + tt.yaml + "\n")
+			if err := os.WriteFile(configPath, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := LoadFromFile(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Entrypoints["http"].Listen; !slices.Equal(got, tt.want) {
+				t.Errorf("Listen = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadFromFile_InvalidYAML(t *testing.T) {
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "devproxy-config-test")
@@ -263,8 +310,9 @@ func TestGetEntrypoint(t *testing.T) {
 	if !ok {
 		t.Error("GetEntrypoint(postgres) returned false, want true")
 	}
-	if ep.Listen != ":15432" {
-		t.Errorf("GetEntrypoint(postgres).Listen = %q, want %q", ep.Listen, ":15432")
+	want := ListenAddresses{"127.0.0.1:15432", "[::1]:15432"}
+	if !slices.Equal(ep.Listen, want) {
+		t.Errorf("GetEntrypoint(postgres).Listen = %v, want %v", ep.Listen, want)
 	}
 
 	// Non-existent entrypoint

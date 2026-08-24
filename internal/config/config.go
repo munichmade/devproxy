@@ -3,8 +3,11 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -27,10 +30,54 @@ type DNSConfig struct {
 	Upstream string   `yaml:"upstream"`
 }
 
+// ListenAddresses is one or more addresses for an entrypoint.
+type ListenAddresses []string
+
+// UnmarshalYAML accepts either a single address or a list of addresses.
+func (a *ListenAddresses) UnmarshalYAML(value *yaml.Node) error {
+	var addresses []string
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var address string
+		if err := value.Decode(&address); err != nil {
+			return err
+		}
+		addresses = []string{address}
+	case yaml.SequenceNode:
+		if err := value.Decode(&addresses); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("listen must be a string or list of strings")
+	}
+
+	*a = nil
+	for _, address := range addresses {
+		for _, normalized := range loopbackAddresses(address) {
+			if !slices.Contains(*a, normalized) {
+				*a = append(*a, normalized)
+			}
+		}
+	}
+	return nil
+}
+
+func loopbackAddresses(address string) ListenAddresses {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return ListenAddresses{address}
+	}
+	ip := net.ParseIP(host)
+	if host == "" || strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") || ip != nil && ip.IsUnspecified() {
+		return ListenAddresses{net.JoinHostPort("127.0.0.1", port), net.JoinHostPort("::1", port)}
+	}
+	return ListenAddresses{address}
+}
+
 // EntrypointConfig configures a single entrypoint (HTTP, HTTPS, or TCP).
 type EntrypointConfig struct {
-	Listen     string `yaml:"listen"`
-	TargetPort int    `yaml:"target_port,omitempty"`
+	Listen     ListenAddresses `yaml:"listen"`
+	TargetPort int             `yaml:"target_port,omitempty"`
 }
 
 // DockerConfig configures Docker integration.
@@ -58,17 +105,17 @@ func Default() *Config {
 		},
 		Entrypoints: map[string]EntrypointConfig{
 			"http": {
-				Listen: ":80", // Privileged port (requires root)
+				Listen: ListenAddresses{"127.0.0.1:80", "[::1]:80"}, // Privileged port (requires root)
 			},
 			"https": {
-				Listen: ":443", // Privileged port (requires root)
+				Listen: ListenAddresses{"127.0.0.1:443", "[::1]:443"}, // Privileged port (requires root)
 			},
 			"postgres": {
-				Listen:     ":15432",
+				Listen:     ListenAddresses{"127.0.0.1:15432", "[::1]:15432"},
 				TargetPort: 5432,
 			},
 			"mongo": {
-				Listen:     ":27017",
+				Listen:     ListenAddresses{"127.0.0.1:27017", "[::1]:27017"},
 				TargetPort: 27017,
 			},
 		},
@@ -168,8 +215,30 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one entrypoint is required")
 	}
 	for name, ep := range c.Entrypoints {
-		if ep.Listen == "" {
+		if len(ep.Listen) == 0 {
 			return fmt.Errorf("entrypoint %q: listen address is required", name)
+		}
+		port := -1
+		for _, address := range ep.Listen {
+			if address == "" {
+				return fmt.Errorf("entrypoint %q: listen address is required", name)
+			}
+			host, portString, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("entrypoint %q: invalid listen address %q: %w", name, address, err)
+			}
+			addressPort, err := net.LookupPort("tcp", portString)
+			if err != nil {
+				return fmt.Errorf("entrypoint %q: invalid listen port %q: %w", name, portString, err)
+			}
+			if port != -1 && port != addressPort {
+				return fmt.Errorf("entrypoint %q: listen addresses must use the same port", name)
+			}
+			port = addressPort
+			ip := net.ParseIP(host)
+			if ip == nil || !ip.IsLoopback() {
+				return fmt.Errorf("entrypoint %q: listen address %q must use a loopback IP", name, address)
+			}
 		}
 	}
 
